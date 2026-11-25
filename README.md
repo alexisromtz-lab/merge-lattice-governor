@@ -7,10 +7,12 @@ masas de cada rama, comprueba qué parejas conmutan de verdad (texto **y** símb
 resuelve por programación dinámica la secuencia exacta en la que **cada prefijo** sigue
 siendo solvente.
 
-Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
+Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
+tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
+pelado —108 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.1
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -23,7 +25,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.4.0
+    rev: v0.4.1
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -47,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.4.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.4.1
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -59,7 +61,7 @@ publicarse como verde. Entradas: `holgura-inicial` · `refs` · `base` (por defe
 `origin/main`) · `repo` (vacío = el workspace) · `ratio` · `banda` · `argumentos` ·
 `salida-json`. Salida `rc` para consumirla en pasos posteriores.
 
-Se recomienda fijar la etiqueta exacta (`@v0.4.0`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.4.1`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -359,7 +361,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.1
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```

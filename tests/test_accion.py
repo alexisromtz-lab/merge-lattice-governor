@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import pathlib
 import subprocess
 import sys
@@ -109,32 +110,49 @@ class Repo(unittest.TestCase):
 
 
 class DeclaracionDeLaAccion(unittest.TestCase):
-    """`action.yml` y el cuerpo no pueden declarar contratos distintos."""
+    """`action.yml` y el cuerpo no pueden declarar contratos distintos.
+
+    Se lee el YAML sin PyYAML a propósito: el paquete declara **cero dependencias**, y
+    una suite que necesita `import yaml` deja el CI en rojo con el paquete sano (pasó en
+    la 0.4.0, tres errores en 3.11 y 3.12 con 108 tests recogidos).
+    """
 
     def setUp(self) -> None:
-        import yaml
+        self.texto = (RAIZ / "action.yml").read_text()
 
-        self.accion = yaml.safe_load((RAIZ / "action.yml").read_text())
+    def _bloque(self, nombre: str) -> str:
+        desde = self.texto.index(f"\n{nombre}:\n") + len(nombre) + 3
+        resto = self.texto[desde:]
+        corte = re.search(r"^\S", resto, re.MULTILINE)
+        return resto[: corte.start()] if corte else resto
+
+    def _claves(self, nombre: str) -> set[str]:
+        """Claves de primer nivel del bloque: dos espacios de sangría, sin hijos."""
+        return {
+            linea.split(":", 1)[0].strip()
+            for linea in self._bloque(nombre).splitlines()
+            if linea.startswith("  ") and not linea.startswith("    ") and linea.strip().endswith(":")
+        }
 
     def test_declara_las_entradas_que_el_cuerpo_lee(self) -> None:
-        entradas = set(self.accion["inputs"])
-        esperadas = {"holgura-inicial", "refs", "base", "repo", "ratio", "banda",
-                     "argumentos", "salida-json"}
-        self.assertEqual(entradas, esperadas)
+        self.assertEqual(
+            self._claves("inputs"),
+            {"holgura-inicial", "refs", "base", "repo", "ratio", "banda", "argumentos",
+             "salida-json"},
+        )
 
     def test_el_paso_del_plan_sale_con_el_rc_del_gobernador(self) -> None:
-        pasos = self.accion["runs"]["steps"]
-        plan = [p for p in pasos if p.get("id") == "plan"]
-        self.assertEqual(len(plan), 1, "sin id=plan, outputs.rc no tiene de dónde leer")
-        guion = plan[0]["run"]
-        self.assertIn("exit $rc", guion, "publicar el RC y salir con 0 es un verde falso")
-        self.assertEqual(self.accion["outputs"]["rc"]["value"], "${{ steps.plan.outputs.rc }}")
+        self.assertEqual(self.texto.count("id: plan"), 1,
+                         "sin id=plan, outputs.rc no tiene de dónde leer")
+        publica = self.texto.index('echo "rc=$rc" >> "$GITHUB_OUTPUT"')
+        sale = self.texto.index("exit $rc", publica)
+        self.assertGreater(sale, publica, "publicar el RC y salir con 0 es un verde falso")
+        self.assertIn("value: ${{ steps.plan.outputs.rc }}", self.texto)
 
     def test_instala_el_paquete_de_esta_accion_y_no_de_un_remoto(self) -> None:
-        instalacion = [p for p in self.accion["runs"]["steps"] if "pip install" in p.get("run", "")]
-        self.assertEqual(len(instalacion), 1)
-        self.assertIn("github.action_path", instalacion[0]["run"])
-        self.assertNotIn("git+https", instalacion[0]["run"])
+        self.assertEqual(self.texto.count("pip install"), 1)
+        self.assertIn("${{ github.action_path }}", self.texto)
+        self.assertNotIn("git+https", self.texto)
 
 
 if __name__ == "__main__":
