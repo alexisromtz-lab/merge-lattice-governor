@@ -16,6 +16,11 @@ predicción —el tronco había renombrado `requests/models.py` → `src/request
 la rama tocó el nombre viejo—. Agrupando los nombres por clase de rename, 0 de 17 cayeron
 fuera. En el corpus del 15 ramas, 0 de 10. Total medido: 27 ramas, 27 conflictos, 0 fuera.
 
+Contra el acto real, el 27-Nov-2026: 28 ramas del corpus rebasadas de verdad
+(`git rebase origin/main` con HEAD en la rama, no al revés). 14 `REBASAR_LIBRE` ⇒ 14
+rebases limpios; 14 `REBASAR_CON_RIESGO` ⇒ 10 con conflicto (14 rutas) y 4 limpios;
+**0 rutas fuera de las clases declaradas**. El acto confirma la cota.
+
 Límite declarado: es cota **superior**, no igualdad. `orquestador-video` predijo 20 clases
 y produjo 4 conflictos; `espejo-publicaciones` predijo 2 y produjo 0. Sirve para descartar
 gratis (`REBASAR_LIBRE`), no para prometer.

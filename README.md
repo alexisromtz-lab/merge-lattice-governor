@@ -12,7 +12,7 @@ tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en u
 pelado —108 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.1
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.2
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -25,7 +25,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.5.1
+    rev: v0.5.2
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.5.1
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.5.2
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -61,7 +61,7 @@ publicarse como verde. Entradas: `holgura-inicial` · `refs` · `base` (por defe
 `origin/main`) · `repo` (vacío = el workspace) · `ratio` · `banda` · `argumentos` ·
 `salida-json`. Salida `rc` para consumirla en pasos posteriores.
 
-Se recomienda fijar la etiqueta exacta (`@v0.5.1`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.5.2`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -197,6 +197,11 @@ Y la ley que lo sostiene, medida el 27-Nov-2026:
 Es **cota superior, no igualdad**: `orquestador-video-20261110` predijo 20 archivos y chocó
 en 4; `espejo-publicaciones-20261111` predijo 2 y chocó en 0. Sirve para descartar gratis
 —un `REBASAR_LIBRE` está probado sin merge-tree—, no para prometer.
+
+**Contra el acto real**, no contra un oráculo: 28 ramas del corpus rebasadas de verdad
+(`git rebase origin/main` con HEAD en la rama) el 27-Nov-2026. **14 `REBASAR_LIBRE` ⇒ 14
+rebases limpios**; 14 `REBASAR_CON_RIESGO` ⇒ **10 con conflicto** (14 rutas) y 4 limpios;
+**0 rutas fuera de las clases declaradas**. Un `REBASAR_LIBRE` no es una apuesta.
 
 Sobre la cola de 15 PRs del 27-Nov-2026 (tronco `34ee1d2c8`): **7 `AL_DIA` · 1
 `REBASAR_LIBRE`** (`agrupar-lectores`, 3 commits atrás) · **7 `REBASAR_CON_RIESGO`**
@@ -395,7 +400,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.1
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.2
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
