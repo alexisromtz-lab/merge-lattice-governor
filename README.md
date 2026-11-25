@@ -10,7 +10,7 @@ siendo solvente.
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.1
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -23,7 +23,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -152,6 +152,17 @@ Un `merge=<driver>` en `.gitattributes` corre dentro del merge real, y este inst
 lo ejecuta. Por eso el veredicto de esas parejas es **`NO_MEDIDO` con el nombre del driver**,
 nunca «limpio»: un driver propio (union, ledger, derivado) puede resolver, abortar o
 reescribir, y ejecutarlo desde un instrumento de lectura sería escribir en el sujeto.
+
+## Límite del clon parcial: el predicado exacto lee blobs
+
+`merge-tree --write-tree` **abre los blobs** del sujeto, así que un clon
+`--filter=blob:none` (habitual en CI y en asistentes que ahorran disco) falla con
+`unable to read blob object <oid>`. Medido el 26-Nov-2026 en `encode/httpx`: el clon
+filtrado sale RC 2 nombrando la causa; `git fetch --refetch` repuebla casi todo pero dejó
+**un blob pendiente** y volvió a fallar; el clon completo resolvió las 45 parejas
+(**42 por teorema, 3 por merge**). El fallo es **ruidoso por diseño** —RC 2 con la causa y
+el remedio—, nunca un verde silencioso. La 0.3.1 cambia el mensaje: antes culpaba a la
+versión de git.
 
 ## Uso
 
@@ -322,7 +333,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.1
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
@@ -376,6 +387,12 @@ cada pareja** —verificado igual a `git merge-base A B` en los 90 pares—:
 Los 4 conflictos textuales son todos contra el mismo PR y el mismo archivo
 (`src/requests/models.py`): un solo PR mal ubicado ya bloquea cuatro aterrizajes.
 
+Cuánto decide el teorema depende de lo frescas que estén las ramas, y eso se mide: en
+`requests` el teorema resuelve **1 de 45** parejas y el merge **44** (10/10 ramas atrasadas);
+en `httpx`, **42 y 3** (2/10 atrasadas). La atribución de `requests` deja los 4 conflictos
+enteros en el tronco (**`TRONCO 4 · PAR 0`**), que es exactamente lo que predice la sección
+siguiente. Medido el 26-Nov-2026 con la 0.3.0.
+
 La columna que importa para el predicado simbólico es la de **oportunidades**: parejas donde
 los dos lados añaden algún `def test…` en la misma `(archivo, clase)` —el único escenario
 donde puede haber shadowing—. Son **6/45** en `requests` y **3/45** en `httpx`; en las 9 se
@@ -388,7 +405,7 @@ propio, y 3 → 1 por pareja.
 Métodos de test nuevos en el periodo: 14 en 6/10 ramas (`requests`) y 54 en 6/10 (`httpx`).
 
 ```bash
-git clone --filter=blob:none https://github.com/psf/requests && cd requests
+git clone https://github.com/psf/requests && cd requests
 git fetch origin 'refs/pull/*/head:refs/heads/pr-*'
 merge-lattice-governor --base origin/main --sin-plan --json \
     --ref pr-7184 --ref pr-7194 --ref pr-7201 --ref pr-7213 --ref pr-7217 \

@@ -122,6 +122,29 @@ def _oraculo(repo: str) -> str:
     return raiz
 
 
+def _causa_merge_tree(proc: subprocess.CompletedProcess, a: str, b: str) -> str:
+    """RC que no es 0 ni 1: nombra la causa, no el síntoma.
+
+    Medido el 26-Nov-2026 en un clon ``--filter=blob:none``: ``merge-tree`` sale
+    RC 128 con ``unable to read blob object …``. Es un clon parcial, no un git
+    viejo ni un conflicto: el remedio es traer los blobs, y sin nombrarlo el
+    operador lee el fallo como que la herramienta no sirve.
+    """
+    linea = (proc.stderr or proc.stdout).strip().splitlines()
+    cola = f" · {linea[0]}" if linea else ""
+    pista = ""
+    if "unable to read blob" in cola or "promisor" in cola.lower():
+        pista = (
+            " · clon parcial: el predicado exacto lee blobs que el filtro no trajo;"
+            " remedio: clonar sin --filter (medido: `git fetch --refetch` repuebla"
+            " casi todo y aun así dejó un blob pendiente)"
+        )
+    return (
+        f"merge-tree --write-tree {a} {b}: RC {proc.returncode}{cola}"
+        f" · sin --write-tree este git no puede distinguir un conflicto de driver{pista}"
+    )
+
+
 def rutas_en_conflicto(repo: str, a: str, b: str) -> tuple[str, ...]:
     """Rutas que un merge a tres bandas deja **en conflicto**: lo dice el merge.
 
@@ -144,12 +167,7 @@ def rutas_en_conflicto(repo: str, a: str, b: str) -> tuple[str, ...]:
         capture_output=True, text=True, errors="replace", check=False,
     )
     if proc.returncode not in (0, 1):
-        linea = (proc.stderr or proc.stdout).strip().splitlines()
-        cola = f" · {linea[0]}" if linea else ""
-        raise ErrorGit(
-            f"merge-tree --write-tree {a} {b}: RC {proc.returncode}{cola}"
-            " · sin --write-tree este git no puede distinguir un conflicto de driver"
-        )
+        raise ErrorGit(_causa_merge_tree(proc, a, b))
     cabecera = proc.stdout.split("\n\n", 1)[0].splitlines()
     rutas = tuple(sorted(linea.strip() for linea in cabecera[1:] if linea.strip()))
     if proc.returncode == 1 and not rutas:

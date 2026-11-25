@@ -6,6 +6,7 @@ atajo **exacto**, y un atajo sin diferencial es una opinión.
 """
 
 import json
+import subprocess
 import unittest
 
 from merge_lattice_governor import parejas as P
@@ -162,6 +163,32 @@ class DiferencialCLI(Base):
             clases.append([(p["clase"], p["textual"]) for p in datos["parejas"]])
         self.assertEqual(clases[0], clases[1])
         self.assertEqual(json.loads(salida)["decisiones"], {P.TEOREMA: 0, P.MEDIDO: 3})
+
+
+class ClonParcial(Base):
+    """Un clon `--filter=blob:none` sale RC 128: la causa se nombra, no se adivina.
+
+    Medido el 26-Nov-2026 en `encode/httpx`: `merge-tree` no puede leer un blob
+    que el filtro no trajo, y el mensaje genérico mandaba a buscar un git viejo.
+    """
+
+    def test_rc_128_por_blob_ausente_nombra_el_clon_parcial(self):
+        proc = subprocess.CompletedProcess(
+            args=["git"], returncode=128, stdout="",
+            stderr="fatal: unable to read blob object e84a4d7b3dd81c336478f9164d59ec65ca2b0237\n",
+        )
+        causa = R._causa_merge_tree(proc, "a", "b")
+        self.assertIn("RC 128", causa)
+        self.assertIn("clon parcial", causa)
+        self.assertIn("--filter", causa, "la causa sin remedio deja al operador parado")
+
+    def test_rc_128_por_otra_causa_no_se_disfraza_de_clon_parcial(self):
+        proc = subprocess.CompletedProcess(
+            args=["git"], returncode=128, stdout="", stderr="fatal: not a git repository\n",
+        )
+        causa = R._causa_merge_tree(proc, "a", "b")
+        self.assertNotIn("clon parcial", causa)
+        self.assertIn("not a git repository", causa)
 
 
 if __name__ == "__main__":
