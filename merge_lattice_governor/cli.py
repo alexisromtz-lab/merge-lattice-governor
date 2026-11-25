@@ -52,6 +52,21 @@ def _parser() -> argparse.ArgumentParser:
         help="peso de una rama en la función objetivo (por defecto 1); repetible",
     )
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--sin-optimizar",
+        action="store_true",
+        help="corre el merge también cuando el soporte es disjunto: diferencial del teorema",
+    )
+    p.add_argument(
+        "--sin-friccion",
+        action="store_true",
+        help="no mide el choque de cada rama con el tronco (una menos por rama atrasada)",
+    )
+    p.add_argument(
+        "--ignorar-driver",
+        action="store_true",
+        help="no lee .gitattributes: el veredicto es el del merge genérico puro (aproximación)",
+    )
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--version", action="version", version=f"merge-lattice-governor {__version__}")
     return p
@@ -128,25 +143,19 @@ def _textual_en_plan(matriz: Sequence[P.Pareja], orden: Sequence[str]) -> list[d
             continue
         tarde, antes = (p.a, p.b) if posicion[p.a] > posicion[p.b] else (p.b, p.a)
         filas.append(
-            {"rama": tarde, "posicion": posicion[tarde] + 1, "con": antes, "rutas": list(p.textual)}
+            {"rama": tarde, "posicion": posicion[tarde] + 1, "con": antes, "rutas": list(p.propias)}
         )
     return sorted(filas, key=lambda f: (f["posicion"], f["rama"]))
 
 
-def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan, h0: float, ratio: float, banda: float, criterio: str) -> str:
+def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan, h0: float, ratio: float, banda: float, criterio: str, fric=None) -> str:
     lineas: list[str] = []
     tronco = R.resolver(repo, base)[:8]
     lineas.append(f"SUJETO · {len(ramas)} ramas · tronco {base} ({tronco})")
     lineas.append(f"HOLGURA INICIAL {h0:+.2f} · banda {banda} · ratio {ratio}")
     lineas.append(f"CRITERIO · peso {criterio} · desempate: holgura final")
     lineas.append("")
-    lineas.append(f"  {'rama':<38}{'base':<10}{'arnes':>8}{'vivo':>8}{'sim':>8}{'Δholgura':>12}")
-    for rama in ramas:
-        m = rama.masa
-        lineas.append(
-            f"  {rama.nombre:<38}{rama.base:<10}{m.arnes:>8}{m.vivo:>8}{m.sim:>8}"
-            f"{m.delta(ratio, banda):>+12.2f}"
-        )
+    lineas.extend(_texto_ramas(ramas, ratio, banda, fric))
     lineas.append("")
 
     if matriz:
@@ -157,6 +166,7 @@ def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan
                       f"{P.CONFLICTO_TEXTUAL} {cuenta[P.CONFLICTO_TEXTUAL]} · "
                       f"{P.NO_MEDIDO} {cuenta[P.NO_MEDIDO]} · "
                       f"{P.HISTORIAS_AJENAS} {cuenta[P.HISTORIAS_AJENAS]}")
+        lineas.extend(_complementos(matriz))
         dup = P.duplicados(matriz)
         lineas.append(
             f"  DUPLICADOS_IDENTICOS {dup['duplicados_identicos']} def(s) en "
@@ -196,11 +206,14 @@ def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan
     return "\n".join(lineas)
 
 
-def _rama_json(rama: Rama, ratio: float, banda: float, *, con_masa: bool) -> dict:
+def _rama_json(rama: Rama, ratio: float, banda: float, *, con_masa: bool,
+               fric: dict[str, tuple[str, ...]] | None = None) -> dict:
     """Una sola forma de ``ramas[]`` en los tres modos.
 
     Sin masa la clave viaja con ``null``, no con un cero ni con la clave ausente:
     un cero se suma y una clave ausente no se distingue de una versión vieja.
+    ``friccion_con_tronco`` sigue la misma regla: ``[]`` es «medido y sin choque»,
+    ``null`` es «no medido».
     """
     return {
         "ref": rama.ref,
@@ -209,6 +222,9 @@ def _rama_json(rama: Rama, ratio: float, banda: float, *, con_masa: bool) -> dic
         "vivo": rama.masa.vivo if con_masa else None,
         "sim": rama.masa.sim if con_masa else None,
         "delta_holgura": rama.masa.delta(ratio, banda) if con_masa else None,
+        "friccion_con_tronco": (
+            None if fric is None else list(fric.get(rama.ref, ()))
+        ),
     }
 
 
@@ -235,12 +251,62 @@ def _parejas_json(matriz: Sequence[P.Pareja]) -> list[dict]:
     return [
         {"a": p.a, "b": p.b, "base": p.base, "clase": p.clase,
          "textual": list(p.textual), "simbolica": list(p.simbolica),
-         "identicos": list(p.identicos), "ilegibles": list(p.ilegibles)}
+         "identicos": list(p.identicos), "ilegibles": list(p.ilegibles),
+         "driver": list(p.driver), "decision": p.decision,
+         "atribucion": p.atribucion}
         for p in matriz
     ]
 
 
-def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio) -> dict:
+def _complementos(matriz: Sequence[P.Pareja]) -> list[str]:
+    """Decisiones, atribución y rutas con driver: el marco de cada veredicto."""
+    if not matriz:
+        return []
+    lineas: list[str] = []
+    dec = P.decisiones(matriz)
+    lineas.append(
+        f"  DECISIÓN · {P.TEOREMA} {dec[P.TEOREMA]} (soporte disjunto, sin merge) · "
+        f"{P.MEDIDO} {dec[P.MEDIDO]} (merge a tres bandas)"
+    )
+    atr = P.atribucion(matriz)
+    if atr[P.ATRIBUCION_TRONCO] or atr[P.ATRIBUCION_PAR]:
+        lineas.append(
+            f"  ATRIBUCIÓN · {P.ATRIBUCION_TRONCO} {atr[P.ATRIBUCION_TRONCO]} "
+            f"(reparación: rebasar) · {P.ATRIBUCION_PAR} {atr[P.ATRIBUCION_PAR]} "
+            f"(el orden no lo repara)"
+        )
+    con = P.con_driver(matriz)
+    if con:
+        rutas = sorted({r.split(" merge=")[0] for p in con for r in p.driver})
+        nombres = sorted({r.split("merge=")[-1] for p in con for r in p.driver})
+        lineas.append(
+            f"  DRIVER · {len(con)} pareja(s) deciden en ruta que tocan los dos lados "
+            f"({len(rutas)} ruta(s) con merge={', '.join(nombres)}): NO_MEDIDO, el driver "
+            "corre en el merge real y aquí no se ejecuta"
+        )
+    return lineas
+
+
+def _texto_ramas(ramas: Sequence[Rama], ratio: float, banda: float,
+                 fric: dict[str, tuple[str, ...]] | None) -> list[str]:
+    cabecera = f"  {'rama':<38}{'base':<10}{'arnes':>8}{'vivo':>8}{'sim':>8}{'Δholgura':>12}"
+    if fric is not None:
+        cabecera += f"{'tronco':>8}"
+    lineas = [cabecera]
+    for rama in ramas:
+        m = rama.masa
+        fila = (
+            f"  {rama.nombre:<38}{rama.base:<10}{m.arnes:>8}{m.vivo:>8}{m.sim:>8}"
+            f"{m.delta(ratio, banda):>+12.2f}"
+        )
+        if fric is not None:
+            fila += f"{len(fric.get(rama.ref, ())):>8}"
+        lineas.append(fila)
+    return lineas
+
+
+def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio,
+                fric=None) -> dict:
     return {
         "schema": ESQUEMA,
         "version": __version__,
@@ -249,10 +315,12 @@ def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio) -> 
         "criterio": criterio,
         "holgura_inicial": round(h0, 4),
         "ley": {"banda_techo": banda, "ratio_linea_base": ratio},
-        "ramas": [_rama_json(r, ratio, banda, con_masa=True) for r in ramas],
+        "ramas": [_rama_json(r, ratio, banda, con_masa=True, fric=fric) for r in ramas],
         "parejas": _parejas_json(matriz),
         "ilegibles": _ilegibles(*(p.ilegibles for p in matriz)),
         "resumen": P.resumen(matriz),
+        "decisiones": P.decisiones(matriz),
+        "atribucion": P.atribucion(matriz),
         "duplicados": P.duplicados(matriz),
         "sola": None,
         "plan": {
@@ -290,7 +358,7 @@ def _self_test() -> int:
     return RC_OK
 
 
-def _texto_matriz(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja]) -> str:
+def _texto_matriz(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], fric=None) -> str:
     tronco = R.resolver(repo, base)[:8]
     cuenta = P.resumen(matriz)
     lineas = [
@@ -302,6 +370,7 @@ def _texto_matriz(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja
         f"{P.NO_MEDIDO} {cuenta[P.NO_MEDIDO]} · "
         f"{P.HISTORIAS_AJENAS} {cuenta[P.HISTORIAS_AJENAS]}",
     ]
+    lineas.extend(_complementos(matriz))
     for p in P.incompatibles(matriz):
         lineas.append(f"  · {p.a} × {p.b}  {p.describe()}")
     lineas.extend(
@@ -391,9 +460,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return RC_ENTRADA
 
     matriz: list[P.Pareja] = []
+    fric: dict[str, tuple[str, ...]] | None = None
     if not args.sin_parejas:
         try:
-            matriz = P.matriz(args.repo, args.ref)
+            matriz = P.matriz(
+                args.repo, args.ref,
+                optimizar=not args.sin_optimizar,
+                driver=not args.ignorar_driver,
+            )
+            if not args.sin_friccion:
+                fric = P.fricciones(args.repo, args.base, args.ref)
+                matriz = P.anotar(matriz, fric)
         except R.ErrorGit as error:
             print(f"RC 2 · {error}", file=sys.stderr)
             return RC_ENTRADA
@@ -415,12 +492,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "holgura_inicial": _h0_json(args.holgura_inicial),
                     "ley": {"banda_techo": args.banda, "ratio_linea_base": args.ratio},
                     "ramas": [
-                        _rama_json(r, args.ratio, args.banda, con_masa=False)
+                        _rama_json(r, args.ratio, args.banda, con_masa=False, fric=fric)
                         for r in ramas
                     ],
                     "parejas": [],
                     "ilegibles": _ilegibles(hallazgos),
                     "resumen": None,
+                    "decisiones": {},
+                    "atribucion": {},
                     "duplicados": {
                         "duplicados_identicos": 0,
                         "parejas_con_duplicados_identicos": 0,
@@ -449,12 +528,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "holgura_inicial": _h0_json(args.holgura_inicial),
                     "ley": {"banda_techo": args.banda, "ratio_linea_base": args.ratio},
                     "ramas": [
-                        _rama_json(r, args.ratio, args.banda, con_masa=False)
+                        _rama_json(r, args.ratio, args.banda, con_masa=False, fric=fric)
                         for r in ramas
                     ],
                     "parejas": _parejas_json(matriz),
                     "ilegibles": _ilegibles(*(p.ilegibles for p in matriz)),
                     "resumen": P.resumen(matriz),
+                    "decisiones": P.decisiones(matriz),
+                    "atribucion": P.atribucion(matriz),
                     "duplicados": P.duplicados(matriz),
                     "sola": None,
                     "plan": None,
@@ -463,7 +544,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 indent=2,
             ))
         else:
-            print(_texto_matriz(args.repo, args.base, ramas, matriz))
+            print(_texto_matriz(args.repo, args.base, ramas, matriz, fric))
         return _rc_matriz(matriz, textual_para=False)
 
     criterio = _criterio(pesos)
@@ -479,9 +560,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.json:
-        print(json.dumps(_carga_json(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio), ensure_ascii=False, indent=2))
+        print(json.dumps(_carga_json(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio, fric), ensure_ascii=False, indent=2))
     else:
-        print(_texto(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio))
+        print(_texto(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio, fric))
 
     rc_matriz = _rc_matriz(matriz)
     if rc_matriz == RC_ENTRADA:

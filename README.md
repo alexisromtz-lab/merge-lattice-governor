@@ -10,7 +10,7 @@ siendo solvente.
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.2
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -23,7 +23,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.2.2
+    rev: v0.3.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -46,12 +46,13 @@ llegó tercera consume el presupuesto que la séptima necesitaba para no romper 
 ni que dos ramas que Git fusiona «limpias» declaran el mismo `test_35` en la misma clase y
 Python resuelve el empate **borrando un test en silencio**.
 
-Tres puntos ciegos, los tres medidos:
+Cuatro puntos ciegos, los cuatro medidos:
 
 | Punto ciego | Qué se pierde | Cómo lo mide esta herramienta |
 |---|---|---|
 | El orden no se mira | un prefijo insolvente aunque el final sea verde | DP exacto sobre subconjuntos: `factible[S]` sólo si **algún** orden de `S` deja todos sus prefijos `> 0` |
 | La base es global | conflictos inventados al comparar N ramas de un mismo tronco | `git merge-base` **por pareja** para conflicto y **por rama** para masa |
+| El merge «limpio» puede estar gobernado | 13 verdes falsos en 105 pares: un `merge=<driver>` no deja marcas | `merge-tree --write-tree` sobre un ODB desechable + `NO_MEDIDO` cuando decide un driver |
 | El merge textual no ve identificadores | shadowing silencioso de métodos de test | AST de ambos lados: misma clase, mismo ordinal, distinto nombre |
 
 ## La ley
@@ -72,13 +73,95 @@ mueve la masa.
 Una rama con `Δholgura` negativo no es una rama mala: es una rama que **necesita que otra
 abra la banda antes**. Eso es exactamente lo que ordena el planificador.
 
+## Errata: 13 verdes falsos, y el predicado que los cierra
+
+La 0.2.x decidía el conflicto textual buscando las marcas `<<<<<<< .our` en la salida de
+`git merge-tree <base> <a> <b>`. Ese predicado **miente en silencio** cuando una ruta está
+gobernada por un `merge=<driver>`: el driver se ejecuta dentro de `merge-tree`, no deja
+marcas, y la ruta se lee limpia aunque el merge real se detenga o aborte.
+
+Medido el 26-Nov-2026 sobre las 105 parejas de la cola de 15 PRs, contra un oráculo
+independiente (`git merge-tree --write-tree`, que sí ejecuta el driver):
+
+| | 0.2.x (marcas) | 0.3.0 (exacto) |
+|---|---|---|
+| `CONFLICTO_TEXTUAL` | 61 | **74** |
+| `CONMUTA_LIMPIO` | 44 | **26** |
+| `NO_MEDIDO` | 0 | **18** |
+| discrepancias vs oráculo | **13 / 105** | **0 / 105** |
+
+Las 13 caían todas en dos rutas: `INVENTARIO_INSTRUMENTOS.md` y
+`tests/test_indice_privado.py`, gobernadas por `merge=platino-derivado` — un driver que
+**para diseño**. El diferencial completo (105 parejas, 116 s, 0 discrepancias) se corrió una
+vez por fuera de la suite; lo que la suite fija en `tests/test_teorema.py::DiferencialCLI` es
+que el atajo y el merge dan el mismo veredicto en los casos sintéticos, para que la
+equivalencia no dependa de una corrida que ya pasó.
+
+Y hay una clase más que ninguna marca puede ver: **el driver corre aunque el merge
+genérico sea limpio**. Cinco parejas de la cola cambian las dos lados una ruta gobernada sin
+ninguna marca de conflicto; el merge real igual invoca el driver. Regla adoptada: si los dos
+lados cambian una ruta con `merge=<nombre>` y `nombre != text`, el par es **`NO_MEDIDO`** —
+el driver decide en el merge real y este instrumento no lo ejecuta. `--ignorar-driver` es la
+aproximación declarada, no el default.
+
+**Cómo se mide el oráculo sin escribir en el repositorio auditado:** un `git init` no-bare
+en `tempfile.mkdtemp()` cuyo `.git/objects/info/alternates` apunta al ODB del sujeto. El
+`merge-tree --write-tree` escribe sus objetos en ese ODB desechable, no en el del sujeto, y
+el árbol se borra al salir. Dos trampas medidas y cerradas: `merge-tree` con un *nombre* de
+ref que no existe devuelve **RC 1 y stdout vacío** —indistinguible de un conflicto si sólo
+se mira el código—, así que las refs se resuelven a OID antes; y `-c core.quotepath=false`
+va **antes** del subcomando.
+
+## Teorema: soporte disjunto, y por qué el atajo es exacto
+
+Con **una sola base común**, dos conjuntos de cambios con soporte de archivos disjunto no
+pueden chocar: el merge es su unión. No es una regularidad empírica, es un teorema, y basta
+para no mergear una cuarta parte de la matriz.
+
+Medido sobre la cola: **25 de 105** parejas tienen soporte disjunto, **25 conmutan**. Sin
+una sola violación. El atajo se puede apagar con `--sin-optimizar`, y el diferencial
+correspondiente (`clase` y `textual` idénticos en 105/105) es lo que convierte el atajo en
+un teorema medido en vez de una opinión: en la corrida completa, `DECISIÓN` publica
+`TEOREMA 25 · MEDIDO 80` y las 105 parejas dan el mismo veredicto por los dos caminos.
+
+Corolario que el teorema **no** autoriza: soporte común no implica conflicto. En la misma
+cola, 26 parejas limpias incluyen parejas que tocan el mismo archivo en regiones distintas.
+
+Y el marco importa: el teorema vale contra el **merge-base de la pareja**, no contra el
+tronco. Medido el 25-Nov-2026 en `psf/requests`, 4 de 7 parejas conflictivas tenían soporte
+disjunto *medido contra el tronco* y aun así chocaban — porque lo que chocaba era el lado
+fresco contra los cambios que el tronco hizo desde la bifurcación del otro (`pr-7388`, 57
+commits atrás). Ahí el soporte no es propiedad de la rama: es propiedad del marco.
+
+## Atribución: el conflicto puede tener al tronco por contraparte
+
+Una pareja que choca no siempre se repara reordenando. Si cada ruta en conflicto ya choca
+entre una de las ramas y el tronco —`merge-tree(tronco, ref)`, cuya base es el punto de
+bifurcación, que es exactamente el conflicto que encuentra un `git rebase`— la contraparte
+es el **tronco**: reordenar no lo toca y el acto único es rebasar.
+
+Medido en la cola: **57 pares atribuidos al tronco · 4 al par**. La fricción por rama
+(`ramas[].friccion_con_tronco`) se publica aparte, porque es un hecho de la rama y no de la
+pareja: **0 rutas en 8 de las 15 ramas** y **1–6 en las otras 7**, con
+`orquestador-video-20261110` a la cabeza (6 rutas: `.gitignore`,
+`.github/copilot-instructions.md`, dos tests y `tools/hooks/pre_push_map.json`).
+
+## Límite del driver: se nombra, no se ejecuta
+
+Un `merge=<driver>` en `.gitattributes` corre dentro del merge real, y este instrumento no
+lo ejecuta. Por eso el veredicto de esas parejas es **`NO_MEDIDO` con el nombre del driver**,
+nunca «limpio»: un driver propio (union, ledger, derivado) puede resolver, abortar o
+reescribir, y ejecutarlo desde un instrumento de lectura sería escribir en el sujeto.
+
 ## Uso
 
 ```
 merge-lattice-governor --repo . --base origin/main --holgura-inicial X \
                        [--ref REF ...] [--ratio R] [--banda B] \
                        [--max-n 18] [--prioridad RAMA=PESO ...] \
-                       [--sin-parejas] [--sin-plan] [--json] [--self-test] [--version]
+                       [--sin-parejas] [--sin-plan] [--sin-optimizar] \
+                       [--sin-friccion] [--ignorar-driver] \
+                       [--json] [--self-test] [--version]
 ```
 
 `--holgura-inicial` es **obligatoria**: una solvencia sin punto de partida es una ficción.
@@ -108,9 +191,17 @@ de ese paso sí se detiene, así que el guion lo dice debajo:
     ⚠ conflicto textual con pr-402 en tools/panel.py: el merge se detiene, resuelve y commitea
 ```
 
-Medido el 26-Nov-2026 sobre una cola real de 15 PRs: **61 de 105 parejas** son textuales. Un
-plan que imprimiera `git merge` sin ese aviso fallaría en el primer paso del par, y quien lo
-corre por primera vez leería el fallo como que la herramienta no funciona.
+Medido el 26-Nov-2026 sobre una cola real de 15 PRs: **74 de 105 parejas** chocan de
+verdad, y **61** de ellas en rutas que el merge genérico decide (las otras 13 las decide un
+`merge=<driver>` declarado en `.gitattributes` y salen `NO_MEDIDO`). Un plan que imprimiera
+`git merge` sin ese aviso fallaría en el primer paso del par, y quien lo corre por primera
+vez leería el fallo como que la herramienta no funciona.
+
+| bandera | qué cambia |
+|---|---|
+| `--sin-optimizar` | corre el merge también cuando el soporte es disjunto: diferencial del teorema, para auditar el atajo |
+| `--sin-friccion` | no mide el choque de cada rama con el tronco (una menos por rama atrasada) |
+| `--ignorar-driver` | no lee `.gitattributes`: el veredicto es el del merge genérico puro — aproximación declarada, no medida |
 
 ## Ejemplo real
 
@@ -151,11 +242,13 @@ Un instrumento honesto dice dónde deja de ver.
   sale excluida puede ser legal allí: aquí se declara insolvente porque el prefijo queda
   por debajo de cero, y eso es un hecho distinto de una cota de banda.
 - **El delta es aditivo y el orden no lo cambia.** Cierto para una ley lineal; falso si
-  rebasar una rama cambia su propio diff. El planificador ordena *aterrizajes*, no rebases.
-- **Conflicto textual sin detección de renombrados.** Se mide con `git merge-tree` en su
-  forma de tres argumentos, que no escribe objetos en el ODB: el discriminante son las
-  marcas `<<<<<<< .our`, porque `changed in both` aparece también en los merges limpios
-  (verificado: `merge-tree` devuelve **RC 0 siempre**).
+  rebasar una rama cambia su propio diff. El planificador ordena *aterrizajes*, no rebases:
+  la atribución al tronco **dice** cuándo el acto es rebasar, pero no rebasa.
+- **Conflicto textual medido, sin seguir renombrados a mano.** Se mide con
+  `git merge-tree --write-tree` sobre el ODB del sujeto montado por `alternates`, que es el
+  merge real incluidos los `merge=<driver>`: los objetos que escribe van a un ODB desechable
+  en `tmp`, no al del repositorio auditado. La detección de renombrados es la de `ort` con
+  su umbral por defecto, no un `-M` explícito sobre historial completo.
 - **Colisión simbólica: Python y métodos de test.** Se detectan `def test_NN…` con ordinal
   y también los `def test_*` sin ordinal (mismo nombre en la misma clase: el segundo pisa al
   primero). El filtro por la base de la pareja evita que un test heredado cuente como
@@ -208,8 +301,10 @@ necesita saber en cuál está para leerlo:
 | `schema` | `"merge-lattice-governor/1"` | forma del sobre, no del contenido |
 | `criterio` | string | qué se maximizó; sin `--prioridad` se dice que todas pesan 1 |
 | `holgura_inicial` | número o `null` | `null` = `NO_MEDIDO`, nunca `0` |
-| `ramas[]` | objetos | `arnes`/`vivo`/`sim`/`delta_holgura` valen `null` sin masa |
-| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`); `ilegibles[]` son motivos completos |
+| `ramas[]` | objetos | `arnes`/`vivo`/`sim`/`delta_holgura` valen `null` sin masa; `friccion_con_tronco` es `[]` (medido y limpio) o `null` (no medido, con `--sin-friccion`) |
+| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`) y `atribucion` (`TRONCO`/`PAR`/`null`); `ilegibles[]` son motivos completos |
+| `decisiones` | objeto | `{TEOREMA, MEDIDO}`: cuántos pares se decidieron por soporte disjunto sin mergear |
+| `atribucion` | objeto | `{TRONCO, PAR}`: de los pares en conflicto, cuántos se explican por el tronco (reparación: rebasar) |
 | `duplicados` | objeto | `duplicados_identicos` (pares de `def`) y `parejas_con_duplicados_identicos` (pares de ramas): dos unidades, dos claves |
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
 | `resumen` | objeto o `null` | `null` en rama sola: 0 pares no es un resumen |
@@ -218,14 +313,16 @@ necesita saber en cuál está para leerlo:
 
 Las claves están siempre: una clave que aparece condicionalmente convierte «no hay» en «no
 sé» — medido el 25-Nov-2026 con un consumidor propio que se rompía en `datos["ilegibles"]`
-justo cuando no había nada ilegible.
+justo cuando no había nada ilegible. En modo rama sola (`--sin-plan --ref R`) `decisiones` y
+`atribucion` viajan como objeto vacío: no hay pares que contar, y un cero ahí se leería como
+una matriz medida.
 
 ## GitHub Actions
 
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.2
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
@@ -236,23 +333,32 @@ merge-lattice-governor` no resuelve todavía.)
 ## Medido sobre una cola real: 15 PRs, 105 parejas
 
 Antes de tocar un repositorio ajeno, la cola de 15 PRs abiertos de un tronco propio, todas
-las parejas (`15·14/2 = 105`), base = `git merge-base` de cada pareja:
+las parejas (`15·14/2 = 105`), base = `git merge-base` de cada pareja. Cifras de la 0.3.0
+(tronco `34ee1d2c`), predicado exacto y driver declarado:
 
 | clase | parejas |
 |---|---|
-| `CONMUTA_LIMPIO` | 42 |
+| `CONMUTA_LIMPIO` | 26 |
 | `CONFLICTO_TEXTUAL` | 61 |
-| `COLISION_SIMBOLICA_AST` | 2 → **0 reales** (75 duplicados idénticos) |
+| `NO_MEDIDO` (ruta con `merge=<driver>` que tocan los dos lados) | 18 |
+| `COLISION_SIMBOLICA_AST` | 0 (75 duplicados idénticos, ver abajo) |
 | `HISTORIAS_AJENAS` | 0 |
-| `NO_MEDIDO` | 0 |
 
-Dos hechos que sólo aparecen al medir la cola entera y que cambian la conclusión:
+Desglose que la tabla de arriba esconde y que el instrumento publica en `--json`:
+`DECISIÓN` **TEOREMA 25 · MEDIDO 80**; `ATRIBUCIÓN` **TRONCO 57 · PAR 4**; 27 parejas tocan
+alguna ruta con driver (13 sólo driver, 9 mixtas, 5 sin conflicto genérico).
+
+Tres hechos que sólo aparecen al medir la cola entera y que cambian la conclusión:
 
 1. **Ningún orden de merge era solvente al empezar.** Con holgura inicial −22, el plan
    integraba 0/15. Con una sola rama de pago por delante (+440,62) el mismo motor integra
    7/15 y cada prefijo sigue siendo positivo hasta +125,62. El cuello de botella no era
    encontrar trozos pequeños: era restaurar la cubeta.
-2. **Las «2 colisiones simbólicas» no eran colisiones.** 75 parejas de `def` con el mismo
+2. **74 de los 105 pares chocan de verdad, y 57 de ellos se explican por el tronco.** La 0.2.x
+   publicaba 61 porque 13 conflictos ocurrían en rutas gobernadas por `merge=platino-derivado`,
+   que no dejan marcas. La cifra vieja no era un error de conteo: era un predicado mirando
+   donde el driver no escribe.
+3. **Las «2 colisiones simbólicas» no eran colisiones.** 75 parejas de `def` con el mismo
    nombre y 75 cuerpos idénticos: 0 tests perdidos. La cifra publicada el 25-Nov era un
    falso positivo del predicado, y este README lo dice en lugar de borrarla.
 
@@ -289,8 +395,10 @@ merge-lattice-governor --base origin/main --sin-plan --json \
     --ref pr-7388 --ref pr-7415 --ref pr-7471 --ref pr-7513 --ref pr-7520
 ```
 
-Nada de esto escribe en el repositorio auditado: `merge-tree` en su forma de tres argumentos
-no toca el ODB ni el índice. Requiere git ≥ 2.38 (probado con 2.39.5).
+Nada de esto escribe en el repositorio auditado: `merge-tree --write-tree` escribe sus
+objetos en un ODB desechable en `tmp` que ve el ODB del sujeto por `alternates`, así que ni
+el ODB ni el índice del sujeto se tocan. Requiere git ≥ 2.38 (probado con 2.39.5); el
+predicado exacto necesita `merge-tree --write-tree`, que es de 2.38 en adelante.
 
 ## Réplica: otra muestra, mismo veredicto
 

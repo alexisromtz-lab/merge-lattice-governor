@@ -8,7 +8,7 @@ global para N ramas de un mismo tronco inventa conflictos que no existen
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import combinations
 
 from . import repo as R
@@ -20,6 +20,22 @@ CONFLICTO_TEXTUAL = "CONFLICTO_TEXTUAL"
 HISTORIAS_AJENAS = "HISTORIAS_AJENAS"
 NO_MEDIDO = "NO_MEDIDO"
 
+TEOREMA = "TEOREMA"
+MEDIDO = "MEDIDO"
+ATRIBUCION_TRONCO = "TRONCO"
+ATRIBUCION_PAR = "PAR"
+
+_PASO = ("text",)
+
+_REGLAS: dict[tuple[str, str], dict[str, str]] = {}
+
+
+def _reglas_de(repo: str, ref: str) -> dict[str, str]:
+    clave = (repo, ref)
+    if clave not in _REGLAS:
+        _REGLAS[clave] = R.drivers(repo, [ref])
+    return _REGLAS[clave]
+
 
 @dataclass(frozen=True)
 class Pareja:
@@ -30,25 +46,52 @@ class Pareja:
     simbolica: tuple[str, ...] = ()
     ilegibles: tuple[str, ...] = ()
     identicos: tuple[str, ...] = ()
+    driver: tuple[str, ...] = ()
+    decision: str = MEDIDO
+    atribucion: str | None = None
+
+    @property
+    def driver_rutas(self) -> tuple[str, ...]:
+        return tuple(e.split(" merge=")[0] for e in self.driver)
+
+    @property
+    def propias(self) -> tuple[str, ...]:
+        """Conflictos de **nuestra** jurisdicción: los que el merge genérico sí mide."""
+        ajenas = set(self.driver_rutas)
+        return tuple(r for r in self.textual if r not in ajenas)
 
     @property
     def clase(self) -> str:
         if self.base is None:
             return HISTORIAS_AJENAS
-        if self.textual:
+        if self.propias:
             return CONFLICTO_TEXTUAL
         if self.simbolica:
             return COLISION_SIMBOLICA_AST
         if self.ilegibles:
             return NO_MEDIDO
+        if self.driver:
+            return NO_MEDIDO
         return CONMUTA_LIMPIO
 
     def describe(self) -> str:
         if self.clase == CONFLICTO_TEXTUAL:
-            return f"{self.clase}: {', '.join(self.textual)}"
+            texto = f"{self.clase}: {', '.join(self.propias)}"
+            if self.atribucion == ATRIBUCION_TRONCO:
+                texto += " · TRONCO: esa ruta ya choca con el tronco en una de las dos ramas, rebasa primero"
+            elif self.atribucion == ATRIBUCION_PAR:
+                texto += " · PAR: el choque no viene del tronco, el orden no lo repara"
+            if self.driver:
+                texto += f" · además driver: {', '.join(self.driver)}"
+            return texto
         if self.clase == COLISION_SIMBOLICA_AST:
             return f"{self.clase}: {', '.join(self.simbolica)}"
         if self.clase == NO_MEDIDO:
+            if self.driver:
+                return (
+                    f"{self.clase}: lo decide {', '.join(self.driver)} — el driver corre en el "
+                    "merge real y aquí no se ejecuta: ni limpio ni rojo"
+                )
             return f"{self.clase}: {', '.join(self.ilegibles)}"
         if self.identicos:
             return f"{self.clase} · {len(self.identicos)} duplicado(s) idéntico(s), ninguno se pierde"
@@ -56,13 +99,14 @@ class Pareja:
 
 
 def _simbolicas(
-    repo: str, a: str, b: str, base: str
+    repo: str, a: str, b: str, base: str, comunes: list[str] | None = None
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     """(colisiones, ilegibles, duplicados idénticos) en las rutas .py de las dos ramas."""
-    comunes = sorted(
-        {r for r in R.rutas(repo, base, a) if r.endswith(".py")}
-        & {r for r in R.rutas(repo, base, b) if r.endswith(".py")}
-    )
+    if comunes is None:
+        comunes = sorted(
+            {r for r in R.rutas(repo, base, a) if r.endswith(".py")}
+            & {r for r in R.rutas(repo, base, b) if r.endswith(".py")}
+        )
     hallazgos: list[str] = []
     ilegibles: list[str] = []
     iguales: list[str] = []
@@ -97,20 +141,84 @@ def _testigo(ruta: str, metodo: Metodo, ref: str) -> str:
     return f"{ruta}:{metodo.linea}@{corto} {metodo.rotulo()}"
 
 
-def pareja(repo: str, a: str, b: str) -> Pareja:
+def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = True) -> Pareja:
+    """Un par, con su base **de pareja** y el veredicto de un merge a tres bandas.
+
+    Teorema (soporte disjunto): con una sola base común, dos conjuntos de cambios
+    que no tocan ningún archivo en común no pueden chocar — el merge es su unión.
+    Cuando el soporte es disjunto no hay merge que correr: la decisión es
+    ``TEOREMA``. Es exacto, no un atajo: `--sin-optimizar` corre el merge igual y
+    tiene que dar el mismo veredicto (test diferencial).
+
+    ``driver=False`` ignora ``.gitattributes``: el veredicto es entonces el del
+    merge genérico puro, que es una aproximación declarada, nunca la verdad.
+    """
     base = R.base_de_par(repo, a, b)
     if base is None:
         return Pareja(a=a, b=b, base=None)
-    simbolica, ilegibles, iguales = _simbolicas(repo, a, b, base)
+    soporte_a = {r for r in R.rutas(repo, base, a)}
+    comunes = sorted(soporte_a & {r for r in R.rutas(repo, base, b)})
+    if optimizar and not comunes:
+        return Pareja(a=a, b=b, base=base, decision=TEOREMA)
+    simbolica, ilegibles, iguales = _simbolicas(
+        repo, a, b, base, [r for r in comunes if r.endswith(".py")]
+    )
+    textual = R.rutas_en_conflicto(repo, a, b)
+    decididas: tuple[str, ...] = ()
+    if driver:
+        reglas = {**_reglas_de(repo, a), **_reglas_de(repo, b)}
+        decididas = tuple(
+            f"{ruta} merge={nombre}"
+            for ruta in comunes
+            if (nombre := R.driver_de(reglas, ruta)) is not None and nombre not in _PASO
+        )
     return Pareja(
         a=a,
         b=b,
         base=base,
-        textual=R.rutas_en_conflicto(repo, base, a, b),
+        textual=textual,
         simbolica=simbolica,
         ilegibles=ilegibles,
         identicos=iguales,
+        driver=decididas,
+        decision=MEDIDO,
     )
+
+
+def friccion(repo: str, tronco: str, ref: str) -> tuple[str, ...]:
+    """Rutas en las que ``ref`` ya choca **con el tronco**: lo que arregla un rebase.
+
+    Es el merge neutro ``merge-tree(tronco, ref)``, cuya base es el fork: el mismo
+    conflicto que verá quien rebase. Una rama al día no mide: su soporte es vacío
+    contra su propia base y el teorema la deja en cero sin tocar el ODB.
+    """
+    base = R.base_de_par(repo, tronco, ref)
+    if base is None or base == R.resolver(repo, tronco):
+        return ()
+    return R.rutas_en_conflicto(repo, tronco, ref)
+
+
+def fricciones(repo: str, tronco: str, refs: list[str]) -> dict[str, tuple[str, ...]]:
+    return {ref: friccion(repo, tronco, ref) for ref in refs}
+
+
+def anotar(parejas: list[Pareja], fric: dict[str, tuple[str, ...]]) -> list[Pareja]:
+    """Atribuye cada conflicto: puede tener al tronco por contraparte.
+
+    La atribución es una **explicación suficiente**, no una reparación probada: si
+    todas las rutas del choque ya chocan con el tronco en alguna de las dos ramas,
+    rebasar es el acto que hay que intentar primero; que el par siga rojo después
+    lo convierte en ``PAR``.
+    """
+    salida: list[Pareja] = []
+    for p in parejas:
+        if p.clase != CONFLICTO_TEXTUAL:
+            salida.append(p)
+            continue
+        explicadas = set(fric.get(p.a, ())) | set(fric.get(p.b, ()))
+        clase = ATRIBUCION_TRONCO if set(p.propias) <= explicadas else ATRIBUCION_PAR
+        salida.append(replace(p, atribucion=clase))
+    return salida
 
 
 def sola(repo: str, tronco: str, ref: str) -> tuple[str, ...]:
@@ -138,8 +246,12 @@ def sola(repo: str, tronco: str, ref: str) -> tuple[str, ...]:
     return tuple(hallazgos)
 
 
-def matriz(repo: str, refs: list[str]) -> list[Pareja]:
-    return [pareja(repo, a, b) for a, b in combinations(refs, 2)]
+def matriz(repo: str, refs: list[str], *, optimizar: bool = True,
+           driver: bool = True) -> list[Pareja]:
+    return [
+        pareja(repo, a, b, optimizar=optimizar, driver=driver)
+        for a, b in combinations(refs, 2)
+    ]
 
 
 def resumen(parejas: list[Pareja]) -> dict[str, int]:
@@ -153,6 +265,28 @@ def resumen(parejas: list[Pareja]) -> dict[str, int]:
     for p in parejas:
         cuenta[p.clase] += 1
     return cuenta
+
+
+def decisiones(parejas: list[Pareja]) -> dict[str, int]:
+    """Cuántos pares se decidieron sin merge (``TEOREMA``) y cuántos mergeando."""
+    cuenta = {TEOREMA: 0, MEDIDO: 0}
+    for p in parejas:
+        cuenta[p.decision] += 1
+    return cuenta
+
+
+def atribucion(parejas: list[Pareja]) -> dict[str, int]:
+    """De los pares en conflicto: cuántos se explican por el tronco y cuántos son del par."""
+    cuenta = {ATRIBUCION_TRONCO: 0, ATRIBUCION_PAR: 0}
+    for p in parejas:
+        if p.atribucion:
+            cuenta[p.atribucion] += 1
+    return cuenta
+
+
+def con_driver(parejas: list[Pareja]) -> list[Pareja]:
+    """Pares donde un ``merge=<driver>`` decide el veredicto y no lo corremos."""
+    return [p for p in parejas if p.driver]
 
 
 def duplicados(parejas: list[Pareja]) -> dict[str, int]:
