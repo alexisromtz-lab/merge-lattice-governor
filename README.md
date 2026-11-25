@@ -10,7 +10,7 @@ siendo solvente.
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.1
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -23,7 +23,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.3.1
+    rev: v0.4.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -37,6 +37,32 @@ $ pre-commit run merge-lattice-governor --hook-stage manual
 Igual que su herramienta hermana, es un hook `manual`: el plan necesita la holgura
 inicial y la lista de ramas, y esas dos cosas las declara quien opera la cola, no el
 `git commit`.
+
+### Como acción de GitHub (`uses:`)
+
+```yaml
+jobs:
+  aterrizaje:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.4.0
+        with:
+          holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
+          refs: "origin/pr-402 origin/pr-401 origin/pr-403"
+          salida-json: artefactos/plan.json
+```
+
+El **RC del gobernador es el RC del paso**: un plan insolvente tumba el check en vez de
+publicarse como verde. Entradas: `holgura-inicial` · `refs` · `base` (por defecto
+`origin/main`) · `repo` (vacío = el workspace) · `ratio` · `banda` · `argumentos` ·
+`salida-json`. Salida `rc` para consumirla en pasos posteriores.
+
+Se recomienda fijar la etiqueta exacta (`@v0.4.0`). Este repositorio **no** mantiene una
+etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
+misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
+
 ---
 
 ## El problema
@@ -333,7 +359,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.3.1
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```

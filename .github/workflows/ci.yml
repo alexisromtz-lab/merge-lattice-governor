@@ -15,3 +15,63 @@ jobs:
           python-version: "${{ matrix.python }}"
       - run: python -m unittest discover -s tests -t . -v
       - run: python -m merge_lattice_governor --self-test
+
+  # La acción compuesta se ejercita en el CI del propio repositorio: un `action.yml` que
+  # sólo se prueba a mano envejece hasta mentir. Este job monta un sujeto de tres ramas y
+  # exige RC 0 solvente y RC 1 insolvente.
+  accion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Montar el sujeto de tres ramas
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sujeto && cd /tmp/sujeto
+          git init -q -b main .
+          git config user.email ci@example.com && git config user.name ci
+          python3 -c 'print("\n".join(f"v{i} = {i}" for i in range(60)))' > app.py
+          git add -A && git commit -qm base
+          for par in a:0 b:20 c:40; do
+            rama=${par%%:*}; linea=${par##*:}
+            git checkout -q -b "$rama" main
+            sed -i "s/^v${linea} = ${linea}$/v${linea} = ${linea}00/" app.py
+            echo "# $rama" > "nota_$rama.py"
+            git add -A && git commit -qm "$rama"
+          done
+          git checkout -q main
+      - name: Plan solvente (RC 0)
+        id: solvente
+        uses: ./
+        with:
+          repo: /tmp/sujeto
+          base: main
+          holgura-inicial: "0"
+          refs: "a,b,c"
+          salida-json: /tmp/sujeto/artefactos/plan.json
+      - name: El JSON publicado declara las tres ramas
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          datos = json.load(open("/tmp/sujeto/artefactos/plan.json"))
+          assert len(datos["ramas"]) == 3, datos["ramas"]
+          assert len(datos["plan"]["orden"]) == 3, datos["plan"]
+          assert datos["plan"]["holgura_final"] > 0, datos["plan"]
+          print("plan:", datos["plan"]["orden"], datos["plan"]["holgura_final"])
+          PY
+          test "${{ steps.solvente.outputs.rc }}" = "0"
+      - name: Plan insolvente (RC 1, y el check debe caer)
+        id: insolvente
+        continue-on-error: true
+        uses: ./
+        with:
+          repo: /tmp/sujeto
+          base: main
+          holgura-inicial: "-100"
+          refs: "a,b,c"
+      - name: El RC insolvente no se disfraza de verde
+        run: |
+          set -euo pipefail
+          test "${{ steps.insolvente.outcome }}" = "failure" \
+            || { echo "::error::un plan insolvente salió verde"; exit 1; }
+          test "${{ steps.insolvente.outputs.rc }}" = "1"

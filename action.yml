@@ -1,0 +1,75 @@
+name: merge-lattice-governor
+description: Plan exacto del orden de aterrizaje de N ramas bajo solvencia de cada prefijo
+author: Platino Labs
+
+branding:
+  icon: git-merge
+  color: blue
+
+inputs:
+  holgura-inicial:
+    description: Holgura de la cubeta antes de aterrizar nada (obligatoria; la ley de masa es de quien opera la cola)
+    required: true
+  refs:
+    description: Ramas a ordenar, separadas por espacio o coma (p. ej. "origin/pr-401 origin/pr-402")
+    required: true
+  base:
+    description: Ref del tronco contra el que se mide la deriva y el techo
+    required: false
+    default: origin/main
+  repo:
+    description: Ruta del repositorio a auditar (vacío = el workspace del job)
+    required: false
+    default: ""
+  ratio:
+    description: Líneas de arnés por línea de producto con que se mide la masa de cada rama (si se omite, se deduce del tronco)
+    required: false
+    default: ""
+  banda:
+    description: Banda de techo del trinquete (fracción; si se omite, se deduce del tronco)
+    required: false
+    default: ""
+  argumentos:
+    description: Argumentos literales extra del CLI (p. ej. "--prioridad origin/pr-402=5 --sin-optimizar")
+    required: false
+    default: ""
+  salida-json:
+    description: Ruta donde dejar el informe --json (vacío = informe de texto en el log)
+    required: false
+    default: ""
+
+outputs:
+  rc:
+    description: Código de salida del gobernador (0 solvente · 1 no cabe en ningún orden · 2 no medido)
+    value: ${{ steps.plan.outputs.rc }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Instalar el gobernador desde esta acción
+      shell: bash
+      run: python -m pip install --quiet --disable-pip-version-check "${{ github.action_path }}"
+    - id: plan
+      name: Plan de aterrizaje
+      shell: bash
+      env:
+        INPUT_HOLGURA: ${{ inputs.holgura-inicial }}
+        INPUT_REFS: ${{ inputs.refs }}
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_RATIO: ${{ inputs.ratio }}
+        INPUT_BANDA: ${{ inputs.banda }}
+        INPUT_ARGUMENTOS: ${{ inputs.argumentos }}
+        INPUT_SALIDA_JSON: ${{ inputs.salida-json }}
+      run: |
+        # El RC del gobernador es el RC del paso. Publicarlo y salir con 0 haría que la
+        # acción se viera verde con un plan insolvente: el falso verde que este paquete mide.
+        set +e
+        bash "${{ github.action_path }}/scripts/accion.sh"
+        rc=$?
+        echo "rc=$rc" >> "$GITHUB_OUTPUT"
+        echo "merge-lattice-governor: RC $rc"
+        exit $rc
