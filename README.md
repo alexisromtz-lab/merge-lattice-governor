@@ -10,13 +10,33 @@ siendo solvente.
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.1
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
 
 Sin PyPI todavía: se instala desde el repositorio, no por nombre corto —`uvx
 merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
+
+### Como hook de `pre-commit`
+
+```yaml
+repos:
+  - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
+    rev: v0.2.1
+    hooks:
+      - id: merge-lattice-governor
+        args: ["--base", "origin/main", "--holgura-inicial", "46.62",
+               "--ref", "origin/pr-402", "--ref", "origin/pr-401"]
+```
+
+```console
+$ pre-commit run merge-lattice-governor --hook-stage manual
+```
+
+Igual que su herramienta hermana, es un hook `manual`: el plan necesita la holgura
+inicial y la lista de ramas, y esas dos cosas las declara quien opera la cola, no el
+`git commit`.
 ---
 
 ## El problema
@@ -193,7 +213,7 @@ justo cuando no había nada ilegible.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.1
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```

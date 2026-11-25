@@ -1,0 +1,8 @@
+- id: merge-lattice-governor
+  name: merge-lattice-governor (orden de aterrizaje solvente por prefijo)
+  description: Plan exacto del orden de merge de N ramas bajo solvencia de cada prefijo.
+  entry: merge-lattice-governor
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [manual]
