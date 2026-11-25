@@ -9,6 +9,7 @@ from typing import Sequence
 
 from . import __version__
 from . import parejas as P
+from . import rebase as B
 from . import repo as R
 from . import sombra as S
 from .ley import BANDA_TECHO, RATIO_LINEA_BASE, Masa
@@ -50,6 +51,11 @@ def _parser() -> argparse.ArgumentParser:
         default=[],
         metavar="RAMA=PESO",
         help="peso de una rama en la función objetivo (por defecto 1); repetible",
+    )
+    p.add_argument(
+        "--prescribir",
+        action="store_true",
+        help="publica el acto de cada rama (rebasar libre / con riesgo) por clases de rename",
     )
     p.add_argument("--json", action="store_true")
     p.add_argument(
@@ -148,7 +154,7 @@ def _textual_en_plan(matriz: Sequence[P.Pareja], orden: Sequence[str]) -> list[d
     return sorted(filas, key=lambda f: (f["posicion"], f["rama"]))
 
 
-def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan, h0: float, ratio: float, banda: float, criterio: str, fric=None) -> str:
+def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan, h0: float, ratio: float, banda: float, criterio: str, fric=None, prescripcion=None) -> str:
     lineas: list[str] = []
     tronco = R.resolver(repo, base)[:8]
     lineas.append(f"SUJETO · {len(ramas)} ramas · tronco {base} ({tronco})")
@@ -188,6 +194,10 @@ def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan
     lineas.append(f"  holgura final {plan.holgura_final:+.2f}")
     lineas.append("")
 
+    if prescripcion:
+        lineas.extend(B.texto(prescripcion))
+        lineas.append("")
+
     if plan.orden:
         por_nombre = {r.nombre: r for r in ramas}
         choques: dict[str, list[dict]] = {}
@@ -226,6 +236,22 @@ def _rama_json(rama: Rama, ratio: float, banda: float, *, con_masa: bool,
             None if fric is None else list(fric.get(rama.ref, ()))
         ),
     }
+
+
+def _prescripcion_json(prescripciones) -> list[dict] | None:
+    """``null`` es «no pedido», no «ninguna rama necesita acto»."""
+    if prescripciones is None:
+        return None
+    return [
+        {
+            "ref": p.ref,
+            "atras": p.atras,
+            "estado": p.estado,
+            "clases_comunes": list(p.clases),
+            "riesgos": list(p.riesgos),
+        }
+        for p in prescripciones
+    ]
 
 
 def _h0_json(h0: float | None) -> float | None:
@@ -306,7 +332,7 @@ def _texto_ramas(ramas: Sequence[Rama], ratio: float, banda: float,
 
 
 def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio,
-                fric=None) -> dict:
+                fric=None, prescripcion=None) -> dict:
     return {
         "schema": ESQUEMA,
         "version": __version__,
@@ -315,6 +341,7 @@ def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio,
         "criterio": criterio,
         "holgura_inicial": round(h0, 4),
         "ley": {"banda_techo": banda, "ratio_linea_base": ratio},
+        "prescripcion": _prescripcion_json(prescripcion),
         "ramas": [_rama_json(r, ratio, banda, con_masa=True, fric=fric) for r in ramas],
         "parejas": _parejas_json(matriz),
         "ilegibles": _ilegibles(*(p.ilegibles for p in matriz)),
@@ -358,7 +385,8 @@ def _self_test() -> int:
     return RC_OK
 
 
-def _texto_matriz(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], fric=None) -> str:
+def _texto_matriz(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], fric=None,
+                  prescripcion=None) -> str:
     tronco = R.resolver(repo, base)[:8]
     cuenta = P.resumen(matriz)
     lineas = [
@@ -373,6 +401,9 @@ def _texto_matriz(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja
     lineas.extend(_complementos(matriz))
     for p in P.incompatibles(matriz):
         lineas.append(f"  · {p.a} × {p.b}  {p.describe()}")
+    if prescripcion:
+        lineas.append("")
+        lineas.extend(B.texto(prescripcion))
     lineas.extend(
         [
             "",
@@ -404,7 +435,8 @@ def _rc_matriz(matriz: list[P.Pareja], *, textual_para: bool = True) -> int:
     return RC_OK
 
 
-def _texto_sola(repo: str, base: str, ref: str, hallazgos: tuple[str, ...]) -> str:
+def _texto_sola(repo: str, base: str, ref: str, hallazgos: tuple[str, ...],
+                prescripcion=None) -> str:
     tronco = R.resolver(repo, base)[:8]
     ilegibles = [h for h in hallazgos if S.MARCA_ILEGIBLE in h]
     choques = [h for h in hallazgos if h not in ilegibles]
@@ -417,6 +449,9 @@ def _texto_sola(repo: str, base: str, ref: str, hallazgos: tuple[str, ...]) -> s
         lineas.append(f"  · {h}")
     for h in ilegibles:
         lineas.append(f"  · NO_MEDIDO {h}")
+    if prescripcion:
+        lineas.append("")
+        lineas.extend(B.texto(prescripcion))
     lineas.extend(
         [
             "",
@@ -435,10 +470,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.ref:
         print("RC 2 · falta --ref: sin población no hay denominador", file=sys.stderr)
         return RC_ENTRADA
-    if args.sin_plan and args.sin_parejas:
+    if args.sin_plan and args.sin_parejas and not args.prescribir:
         print("RC 2 · --sin-plan y --sin-parejas no dejan nada que medir", file=sys.stderr)
         return RC_ENTRADA
-    if len(args.ref) < 2 and not args.sin_parejas and not args.sin_plan:
+    if len(args.ref) < 2 and not args.sin_parejas and not args.sin_plan and not args.prescribir:
         print(
             "RC 2 · la matriz necesita >=2 ramas: una matriz de 0 pares no es una matriz limpia;"
             " usa --sin-parejas para planificar una sola rama o --sin-plan --ref R para auditarla",
@@ -455,6 +490,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         ramas = _ramas(args.repo, args.base, args.ref, args.ratio, args.banda, con_masa=not args.sin_plan)
         pesos = _pesos(args.prioridad, ramas)
+        prescripcion = (
+            B.prescribir(args.repo, args.base, args.ref) if args.prescribir else None
+        )
     except (R.ErrorGit, ValueError) as error:
         print(f"RC 2 · {error}", file=sys.stderr)
         return RC_ENTRADA
@@ -491,6 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "criterio": "rama sola: duplicado interno, sin pareja",
                     "holgura_inicial": _h0_json(args.holgura_inicial),
                     "ley": {"banda_techo": args.banda, "ratio_linea_base": args.ratio},
+                    "prescripcion": _prescripcion_json(prescripcion),
                     "ramas": [
                         _rama_json(r, args.ratio, args.banda, con_masa=False, fric=fric)
                         for r in ramas
@@ -511,7 +550,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 indent=2,
             ))
         else:
-            print(_texto_sola(args.repo, args.base, args.ref[0], hallazgos))
+            print(_texto_sola(args.repo, args.base, args.ref[0], hallazgos, prescripcion))
         if any(S.MARCA_ILEGIBLE in h for h in hallazgos):
             return RC_ENTRADA
         return RC_PARADA if hallazgos else RC_OK
@@ -527,6 +566,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "criterio": "matriz sola: sin holgura no hay plan que decidir",
                     "holgura_inicial": _h0_json(args.holgura_inicial),
                     "ley": {"banda_techo": args.banda, "ratio_linea_base": args.ratio},
+                    "prescripcion": _prescripcion_json(prescripcion),
                     "ramas": [
                         _rama_json(r, args.ratio, args.banda, con_masa=False, fric=fric)
                         for r in ramas
@@ -544,7 +584,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 indent=2,
             ))
         else:
-            print(_texto_matriz(args.repo, args.base, ramas, matriz, fric))
+            print(_texto_matriz(args.repo, args.base, ramas, matriz, fric, prescripcion))
         return _rc_matriz(matriz, textual_para=False)
 
     criterio = _criterio(pesos)
@@ -560,9 +600,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.json:
-        print(json.dumps(_carga_json(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio, fric), ensure_ascii=False, indent=2))
+        print(json.dumps(_carga_json(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio, fric, prescripcion), ensure_ascii=False, indent=2))
     else:
-        print(_texto(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio, fric))
+        print(_texto(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda, criterio, fric, prescripcion))
 
     rc_matriz = _rc_matriz(matriz)
     if rc_matriz == RC_ENTRADA:

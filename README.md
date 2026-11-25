@@ -12,7 +12,7 @@ tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en u
 pelado —108 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.1
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -25,7 +25,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.4.1
+    rev: v0.5.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.4.1
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.5.0
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -61,7 +61,7 @@ publicarse como verde. Entradas: `holgura-inicial` · `refs` · `base` (por defe
 `origin/main`) · `repo` (vacío = el workspace) · `ratio` · `banda` · `argumentos` ·
 `salida-json`. Salida `rc` para consumirla en pasos posteriores.
 
-Se recomienda fijar la etiqueta exacta (`@v0.4.1`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.5.0`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -174,6 +174,39 @@ pareja: **0 rutas en 8 de las 15 ramas** y **1–6 en las otras 7**, con
 `orquestador-video-20261110` a la cabeza (6 rutas: `.gitignore`,
 `.github/copilot-instructions.md`, dos tests y `tools/hooks/pre_push_map.json`).
 
+## Prescripción: el acto, antes de ejecutarlo (`--prescribir`)
+
+La atribución dice *cuándo* el acto es rebasar. `--prescribir` lo publica rama a rama y sin
+leer un solo blob —dos `git diff` y un `rev-list` por rama—:
+
+| estado | significado |
+|---|---|
+| `AL_DIA` | la rama ya contiene el tronco: no pide acto |
+| `REBASAR_LIBRE` | **0 clases de identidad** tocadas por los dos lados: rebase sin conflicto textual |
+| `REBASAR_CON_RIESGO` | las clases comunes, para que el operador sepa qué archivos verá |
+
+Y la ley que lo sostiene, medida el 27-Nov-2026:
+
+> **La identidad de una ruta no es su nombre.** Comparando **nombres**, 11 de 17 conflictos
+> de rebase quedaban fuera de la predicción en los PRs abiertos más viejos de `psf/requests`:
+> el tronco había renombrado `requests/models.py` → `src/requests/models.py` y la rama tocó
+> el nombre viejo, así que los conjuntos de nombres salían disjuntos y el par se leía «libre».
+> Agrupando los nombres por clase de rename (`-M --find-copies-harder`, union-find): **0 de
+> 17 fuera**. Sobre la cola del corpus: **0 de 10**. Total: **27 ramas, 27 conflictos, 0 fuera.**
+
+Es **cota superior, no igualdad**: `orquestador-video-20261110` predijo 20 archivos y chocó
+en 4; `espejo-publicaciones-20261111` predijo 2 y chocó en 0. Sirve para descartar gratis
+—un `REBASAR_LIBRE` está probado sin merge-tree—, no para prometer.
+
+Sobre la cola de 15 PRs del 27-Nov-2026 (tronco `34ee1d2c8`): **7 `AL_DIA` · 1
+`REBASAR_LIBRE`** (`agrupar-lectores`, 3 commits atrás) · **7 `REBASAR_CON_RIESGO`**
+(`orquestador-video` con 20 archivos en juego, el resto 1–2). No cambia el RC: es el acto,
+no el veredicto.
+
+```console
+$ merge-lattice-governor --base origin/main --prescribir --sin-plan --ref origen/rama-a --json
+```
+
 ## Límite del driver: se nombra, no se ejecuta
 
 Un `merge=<driver>` en `.gitattributes` corre dentro del merge real, y este instrumento no
@@ -199,7 +232,7 @@ merge-lattice-governor --repo . --base origin/main --holgura-inicial X \
                        [--ref REF ...] [--ratio R] [--banda B] \
                        [--max-n 18] [--prioridad RAMA=PESO ...] \
                        [--sin-parejas] [--sin-plan] [--sin-optimizar] \
-                       [--sin-friccion] [--ignorar-driver] \
+                       [--prescribir] [--sin-friccion] [--ignorar-driver] \
                        [--json] [--self-test] [--version]
 ```
 
@@ -344,6 +377,7 @@ necesita saber en cuál está para leerlo:
 | `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`) y `atribucion` (`TRONCO`/`PAR`/`null`); `ilegibles[]` son motivos completos |
 | `decisiones` | objeto | `{TEOREMA, MEDIDO}`: cuántos pares se decidieron por soporte disjunto sin mergear |
 | `atribucion` | objeto | `{TRONCO, PAR}`: de los pares en conflicto, cuántos se explican por el tronco (reparación: rebasar) |
+| `prescripcion` | lista u `null` | el acto por rama `{ref, atras, estado, clases_comunes[], riesgos[]}`; `null` = no pedido con `--prescribir`, `[]` no ocurre (siempre hay al menos una rama) |
 | `duplicados` | objeto | `duplicados_identicos` (pares de `def`) y `parejas_con_duplicados_identicos` (pares de ramas): dos unidades, dos claves |
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
 | `resumen` | objeto o `null` | `null` en rama sola: 0 pares no es un resumen |
@@ -361,7 +395,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.4.1
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
