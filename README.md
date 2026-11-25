@@ -121,6 +121,11 @@ Un instrumento honesto dice dónde deja de ver.
 - **Compone parejas, no audita una rama sola.** Un archivo con dos `def test_07_*` en la
   misma clase es una colisión interna de esa rama y este paquete no la busca: su unidad es
   el par. Para eso está `py-test-shadow-guard`.
+- **Maximiza el número de ramas integradas, no la holgura que queda.** Entre un plan de
+  7 ramas que cierra en +125,62 y otro de 6 que cierra en +46,62, elige el de 7. No es un
+  detalle: sobre los 15 PRs abiertos de un árbol real (26-Nov-2026) el plan integra otras
+  ramas que un plan hecho a mano que maximizaba margen. Si quieres el otro criterio, hoy se
+  calcula a mano; el planificador no lo parametriza.
 - **Exacto hasta `--max-n` (18).** Por encima, el plan pasa a voraz y lo **dice**
   (`exacto: false`): un plan voraz sigue respetando la solvencia de cada prefijo, pero ya
   no garantiza el máximo número de ramas integradas.
