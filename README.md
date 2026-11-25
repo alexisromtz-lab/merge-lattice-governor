@@ -10,7 +10,7 @@ siendo solvente.
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.1
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.2
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -23,7 +23,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.2.1
+    rev: v0.2.2
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -225,7 +225,7 @@ justo cuando no había nada ilegible.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.1
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.2
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
@@ -291,6 +291,52 @@ merge-lattice-governor --base origin/main --sin-plan --json \
 
 Nada de esto escribe en el repositorio auditado: `merge-tree` en su forma de tres argumentos
 no toca el ODB ni el índice. Requiere git ≥ 2.38 (probado con 2.39.5).
+
+## Réplica: otra muestra, mismo veredicto
+
+Elegir la muestra y publicar el resultado deja abierta la objeción de sesgo de selección.
+Segunda pasada con un muestreo distinto —los diez PRs abiertos que tocaban `.py` en el momento
+de medir—, mismos troncos, todas las parejas:
+
+| repositorio | pares | limpio | textual | simbólico | discrepancias vs `git merge-tree` |
+|---|---|---|---|---|---|
+| `psf/requests` | 45 | 38 | 7 | 0 | **0/45** |
+| `encode/httpx` | 45 | 45 | 0 | 0 | **0/45** |
+
+El eje simbólico se recalculó por fuera del motor, sobre los símbolos que cada rama **añade**
+(no los que hereda: `PreparedRequest.__init__` existe en las dos ramas porque existe en el
+tronco, y no es una colisión): 0 choques, 0 discrepancias. Con eso el eje textual y el
+simbólico tienen auditoría independiente sobre 90 parejas ajenas; el eje simbólico **no tuvo
+ocasión de disparar** en ellas, y su testigo de fuego sigue siendo el corpus propio (20 → 1).
+
+### Un conflicto de pareja puede tener al tronco por contraparte
+
+Los 7 conflictos de `requests` tienen todos el mismo lado: `pr-7388`. No es una rama fresca:
+su base está **57 commits atrás** (104 en `pr-7194`; **10/10** ramas de `requests` van
+atrasadas, frente a **2/10** de `httpx`, con 4). Al fusionar `pr-7520` × `pr-7388` el
+merge-base de la pareja es el tronco viejo, así que el lado de `pr-7520` arrastra los cambios
+que el **tronco** hizo en `src/requests/models.py` desde entonces. El conflicto es real, pero
+su contraparte no es el otro PR: es el tronco.
+
+Medido, no inferido: `git rebase main` sobre `pr-7388` en un worktree desechable conflictúa en
+**el mismo archivo**. Consecuencia operativa: **reordenar el plan no repara ese conflicto**
+—todo orden pone a `pr-7388` junto al tronco— y el acto de reparación es uno solo: rebasar la
+rama atrasada, no reasignar vértices.
+
+Corolario que corrige el criterio ingenuo: «soporte textual disjunto ⇒ conmuta» es **falso**.
+En esta muestra, 4 de las 7 parejas conflictivas tienen soporte disjunto *medido contra el
+tronco* (`pr-7520` toca `utils.py`, `pr-7388` toca `models.py`) y aun así chocan. El soporte
+de una rama no es propiedad de la rama: es propiedad del marco en que se mide, y el único
+marco que decide es el merge-base de la pareja. Por eso la columna «con archivo común» de la
+tabla anterior se calcula contra la base de cada pareja y no contra el tronco: contra el
+tronco habría escondido exactamente estas cuatro.
+
+```bash
+# Muestra de la réplica: los diez PRs abiertos que tocaban .py, base = merge-base de la pareja
+merge-lattice-governor --base main --sin-plan --json \
+    --ref pr-7194 --ref pr-7213 --ref pr-7388 --ref pr-7413 --ref pr-7415 \
+    --ref pr-7446 --ref pr-7471 --ref pr-7506 --ref pr-7513 --ref pr-7520
+```
 
 ## Conformidad medida
 
