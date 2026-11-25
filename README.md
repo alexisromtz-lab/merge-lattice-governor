@@ -10,7 +10,7 @@ siendo solvente.
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor.git
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -193,7 +193,7 @@ justo cuando no había nada ilegible.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor.git
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.2.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
