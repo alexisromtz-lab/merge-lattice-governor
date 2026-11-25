@@ -136,6 +136,12 @@ def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan
                       f"{P.CONFLICTO_TEXTUAL} {cuenta[P.CONFLICTO_TEXTUAL]} · "
                       f"{P.NO_MEDIDO} {cuenta[P.NO_MEDIDO]} · "
                       f"{P.HISTORIAS_AJENAS} {cuenta[P.HISTORIAS_AJENAS]}")
+        dup = P.duplicados(matriz)
+        lineas.append(
+            f"  DUPLICADOS_IDENTICOS {dup['duplicados_identicos']} def(s) en "
+            f"{dup['parejas_con_duplicados_identicos']} pareja(s) · mismo nombre y mismo "
+            f"cuerpo, ningún test se pierde · 0 aquí significa mirado, no ausente"
+        )
         for p in P.incompatibles(matriz):
             lineas.append(f"  · {p.a} × {p.b}  {p.describe()}")
         lineas.append("")
@@ -200,7 +206,7 @@ def _parejas_json(matriz: Sequence[P.Pareja]) -> list[dict]:
     return [
         {"a": p.a, "b": p.b, "base": p.base, "clase": p.clase,
          "textual": list(p.textual), "simbolica": list(p.simbolica),
-         "ilegibles": list(p.ilegibles)}
+         "identicos": list(p.identicos), "ilegibles": list(p.ilegibles)}
         for p in matriz
     ]
 
@@ -218,6 +224,7 @@ def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio) -> 
         "parejas": _parejas_json(matriz),
         "ilegibles": _ilegibles(*(p.ilegibles for p in matriz)),
         "resumen": P.resumen(matriz),
+        "duplicados": P.duplicados(matriz),
         "sola": None,
         "plan": {
             "exacto": plan.exacto,
@@ -384,6 +391,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "parejas": [],
                     "ilegibles": _ilegibles(hallazgos),
                     "resumen": None,
+                    "duplicados": {
+                        "duplicados_identicos": 0,
+                        "parejas_con_duplicados_identicos": 0,
+                    },
                     "sola": {"ref": args.ref[0], "hallazgos": list(hallazgos)},
                     "plan": None,
                 },
@@ -414,6 +425,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "parejas": _parejas_json(matriz),
                     "ilegibles": _ilegibles(*(p.ilegibles for p in matriz)),
                     "resumen": P.resumen(matriz),
+                    "duplicados": P.duplicados(matriz),
                     "sola": None,
                     "plan": None,
                 },

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from itertools import combinations
 
 from . import repo as R
-from .sombra import Metodo, colisiones, leer, metodos, nuevos
+from .sombra import Metodo, colisiones, identicos, leer, metodos, nuevos
 
 CONMUTA_LIMPIO = "CONMUTA_LIMPIO"
 COLISION_SIMBOLICA_AST = "COLISION_SIMBOLICA_AST"
@@ -29,6 +29,7 @@ class Pareja:
     textual: tuple[str, ...] = ()
     simbolica: tuple[str, ...] = ()
     ilegibles: tuple[str, ...] = ()
+    identicos: tuple[str, ...] = ()
 
     @property
     def clase(self) -> str:
@@ -49,17 +50,22 @@ class Pareja:
             return f"{self.clase}: {', '.join(self.simbolica)}"
         if self.clase == NO_MEDIDO:
             return f"{self.clase}: {', '.join(self.ilegibles)}"
+        if self.identicos:
+            return f"{self.clase} · {len(self.identicos)} duplicado(s) idéntico(s), ninguno se pierde"
         return self.clase
 
 
-def _simbolicas(repo: str, a: str, b: str, base: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """(colisiones, archivos ilegibles) sobre las rutas .py que las dos ramas tocan."""
+def _simbolicas(
+    repo: str, a: str, b: str, base: str
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """(colisiones, ilegibles, duplicados idénticos) en las rutas .py de las dos ramas."""
     comunes = sorted(
         {r for r in R.rutas(repo, base, a) if r.endswith(".py")}
         & {r for r in R.rutas(repo, base, b) if r.endswith(".py")}
     )
     hallazgos: list[str] = []
     ilegibles: list[str] = []
+    iguales: list[str] = []
     for ruta in comunes:
         fuente_a = R.leer(repo, a, ruta)
         fuente_b = R.leer(repo, b, ruta)
@@ -78,7 +84,11 @@ def _simbolicas(repo: str, a: str, b: str, base: str) -> tuple[tuple[str, ...], 
             hallazgos.append(
                 f"{_testigo(ruta, metodo_a, a)} vs {_testigo(ruta, metodo_b, b)}"
             )
-    return tuple(hallazgos), tuple(ilegibles)
+        for metodo_a, metodo_b in identicos(nuevos_a, nuevos_b):
+            iguales.append(
+                f"{_testigo(ruta, metodo_a, a)} vs {_testigo(ruta, metodo_b, b)}"
+            )
+    return tuple(hallazgos), tuple(ilegibles), tuple(iguales)
 
 
 def _testigo(ruta: str, metodo: Metodo, ref: str) -> str:
@@ -91,7 +101,7 @@ def pareja(repo: str, a: str, b: str) -> Pareja:
     base = R.base_de_par(repo, a, b)
     if base is None:
         return Pareja(a=a, b=b, base=None)
-    simbolica, ilegibles = _simbolicas(repo, a, b, base)
+    simbolica, ilegibles, iguales = _simbolicas(repo, a, b, base)
     return Pareja(
         a=a,
         b=b,
@@ -99,6 +109,7 @@ def pareja(repo: str, a: str, b: str) -> Pareja:
         textual=R.rutas_en_conflicto(repo, base, a, b),
         simbolica=simbolica,
         ilegibles=ilegibles,
+        identicos=iguales,
     )
 
 
@@ -142,6 +153,20 @@ def resumen(parejas: list[Pareja]) -> dict[str, int]:
     for p in parejas:
         cuenta[p.clase] += 1
     return cuenta
+
+
+def duplicados(parejas: list[Pareja]) -> dict[str, int]:
+    """Duplicados idénticos: cuántos pares de ``def`` y en cuántas parejas.
+
+    Van aparte de ``resumen`` porque la unidad es otra: ``resumen`` cuenta
+    parejas de ramas y esto cuenta pares de definiciones. Sumarlos daría un
+    total que no es de nadie.
+    """
+    con = [p for p in parejas if p.identicos]
+    return {
+        "duplicados_identicos": sum(len(p.identicos) for p in parejas),
+        "parejas_con_duplicados_identicos": len(con),
+    }
 
 
 def incompatibles(parejas: list[Pareja]) -> list[Pareja]:

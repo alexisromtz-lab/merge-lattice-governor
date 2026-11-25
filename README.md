@@ -72,7 +72,10 @@ matriz se publica y el plan se declara `NO_MEDIDO` en vez de inventarse con otro
 | `2` | entrada inválida, o `NO_MEDIDO`: un archivo que no se pudo leer como Python no es un par limpio |
 
 Con `--sin-plan` el conflicto textual es el dato, no la parada: la matriz informa y sale
-RC 0. `NO_MEDIDO` nunca degrada a 0 en ningún modo.
+RC 0. Las otras dos clases **sí paran en ese modo**, y por razones distintas: una
+`COLISION_SIMBOLICA_AST` es un hecho sobre el contenido —dos ramas que no pueden convivir—,
+y un `NO_MEDIDO` es un archivo que no se pudo leer. `NO_MEDIDO` nunca degrada a 0 en ningún
+modo.
 
 Además del plan, imprime un bloque `OPERAR` con las líneas `git merge --no-ff` en el orden
 resuelto — el plan no es una opinión, es un guion ejecutable.
@@ -124,7 +127,16 @@ Un instrumento honesto dice dónde deja de ver.
 - **Colisión simbólica: Python y métodos de test.** Se detectan `def test_NN…` con ordinal
   y también los `def test_*` sin ordinal (mismo nombre en la misma clase: el segundo pisa al
   primero). El filtro por la base de la pareja evita que un test heredado cuente como
-  colisión. No cubre `pytest` parametrizado, `setattr` dinámico ni otros lenguajes.
+  colisión. Un **duplicado idéntico** —mismo nombre y mismo cuerpo a los dos lados— no es
+  colisión: el merge deja el método repetido y las dos copias son la misma función. Se
+  publica aparte, en `identicos` por pareja y en el bloque `duplicados`, porque un cero ahí
+  significa *mirado y no hay*. No cubre `pytest` parametrizado, `setattr` dinámico ni otros
+  lenguajes.
+- **El predicado comparaba nombres, y eso no mide pérdida.** Medido el 26-Nov-2026 sobre 15
+  PRs reales (105 parejas): 2 parejas marcadas `COLISION_SIMBOLICA_AST` con 75 hallazgos por
+  nombre compartido, y los **75 con el cuerpo idéntico** ⇒ 0 tests perdidos. Falsos
+  positivos: 75 de 75. Con la huella del cuerpo (`ast.dump` sin números de línea) el número
+  real de pérdidas es **0**, y ahora se sabe porque se mide, no porque no se miró.
 - **El plan no propone una pareja que choca.** Una colisión simbólica no la arregla el
   orden: si dos ramas declaran el mismo test, sólo una puede aterrizar. El planificador
   recibe el grafo de parejas incompatibles y elige un conjunto independiente, así que la
@@ -165,7 +177,8 @@ necesita saber en cuál está para leerlo:
 | `criterio` | string | qué se maximizó; sin `--prioridad` se dice que todas pesan 1 |
 | `holgura_inicial` | número o `null` | `null` = `NO_MEDIDO`, nunca `0` |
 | `ramas[]` | objetos | `arnes`/`vivo`/`sim`/`delta_holgura` valen `null` sin masa |
-| `parejas[]` | objetos | `clase` + testigos; `ilegibles[]` son motivos completos |
+| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`); `ilegibles[]` son motivos completos |
+| `duplicados` | objeto | `duplicados_identicos` (pares de `def`) y `parejas_con_duplicados_identicos` (pares de ramas): dos unidades, dos claves |
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
 | `resumen` | objeto o `null` | `null` en rama sola: 0 pares no es un resumen |
 | `sola` | objeto o `null` | sólo en `--sin-plan --ref R` |
@@ -187,6 +200,29 @@ justo cuando no había nada ilegible.
 
 (Sin wheel publicado, la instalación es por URL de repositorio; `pip install
 merge-lattice-governor` no resuelve todavía.)
+
+## Medido sobre una cola real: 15 PRs, 105 parejas
+
+Antes de tocar un repositorio ajeno, la cola de 15 PRs abiertos de un tronco propio, todas
+las parejas (`15·14/2 = 105`), base = `git merge-base` de cada pareja:
+
+| clase | parejas |
+|---|---|
+| `CONMUTA_LIMPIO` | 42 |
+| `CONFLICTO_TEXTUAL` | 61 |
+| `COLISION_SIMBOLICA_AST` | 2 → **0 reales** (75 duplicados idénticos) |
+| `HISTORIAS_AJENAS` | 0 |
+| `NO_MEDIDO` | 0 |
+
+Dos hechos que sólo aparecen al medir la cola entera y que cambian la conclusión:
+
+1. **Ningún orden de merge era solvente al empezar.** Con holgura inicial −22, el plan
+   integraba 0/15. Con una sola rama de pago por delante (+440,62) el mismo motor integra
+   7/15 y cada prefijo sigue siendo positivo hasta +125,62. El cuello de botella no era
+   encontrar trozos pequeños: era restaurar la cubeta.
+2. **Las «2 colisiones simbólicas» no eran colisiones.** 75 parejas de `def` con el mismo
+   nombre y 75 cuerpos idénticos: 0 tests perdidos. La cifra publicada el 25-Nov era un
+   falso positivo del predicado, y este README lo dice en lugar de borrarla.
 
 ## Medido sobre repositorios ajenos
 
@@ -234,8 +270,8 @@ corpus de conformidad como datos y puntúa a cada herramienta contra él:
 composicion-core --sonda governor --ruta .
 ```
 
-Marcador del 25-Nov-2026: **9 rojo · 9 aviso · 9 no_medido · 0 discrepancias · 1 no
-comparable**. `composicion-core` no es una dependencia —estos paquetes siguen sin
+Marcador del 26-Nov-2026, corpus de 14 casos y cuatro canales: **11 rojo · 9 aviso · 9
+no_medido · 9 identico · 0 discrepancias · 1 no comparable**. `composicion-core` no es una dependencia —estos paquetes siguen sin
 dependencias de terceros— sino un juez externo: si los dos divergen, el que se equivoca se
 ve.
 

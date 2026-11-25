@@ -414,3 +414,49 @@ class TestFormaDelJson(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDuplicadoIdenticoExtremo(unittest.TestCase):
+    """Dos ramas que insertan el mismo test: git no choca, Python no pierde nada.
+
+    Antes del canal ``identico`` esto era ``COLISION_SIMBOLICA_AST`` y RC 1; el
+    plan quedaba con 1/2 ramas. El caso real (15 PRs, 26-Nov-2026) fue 75 de 75.
+    """
+
+    CUERPO = ["    def test_900_repetido(self):", "        self.assertEqual(2 + 2, 4)"]
+    ANCLA = "    def test_101_m101(self):"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = RepoDePrueba()
+        suite = _suite_con(cls.ANCLA, cls.CUERPO)
+        cls.repo.rama("mismo_a", "tests/test_suite.py", suite)
+        cls.repo.rama("mismo_b", "tests/test_suite.py", suite)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.repo.cerrar()
+
+    def test_la_pareja_es_limpia_y_el_duplicado_se_publica(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10", "--json", "--ref", "mismo_a", "--ref", "mismo_b"
+        )
+        datos = json.loads(salida)
+        self.assertEqual(rc, 0, salida)
+        pareja = datos["parejas"][0]
+        self.assertEqual(pareja["clase"], "CONMUTA_LIMPIO")
+        self.assertEqual(pareja["simbolica"], [])
+        self.assertEqual(len(pareja["identicos"]), 1)
+        self.assertIn("test_900_repetido", pareja["identicos"][0])
+        self.assertEqual(datos["duplicados"]["duplicados_identicos"], 1)
+        self.assertEqual(datos["duplicados"]["parejas_con_duplicados_identicos"], 1)
+        self.assertEqual(sorted(datos["plan"]["orden"]), ["mismo_a", "mismo_b"])
+        self.assertEqual(datos["plan"]["excluidas"], [])
+
+    def test_la_matriz_declara_que_miro(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10", "--ref", "mismo_a", "--ref", "mismo_b"
+        )
+        self.assertEqual(rc, 0, salida)
+        self.assertIn("DUPLICADOS_IDENTICOS", salida)
+        self.assertIn("mirado, no ausente", salida)

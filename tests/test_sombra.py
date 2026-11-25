@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from merge_lattice_governor.sombra import colisiones, leer, metodos, nuevos
+from merge_lattice_governor.sombra import colisiones, identicos, leer, metodos, nuevos
 
 FUENTE = '''
 import unittest
@@ -101,8 +101,10 @@ class TestColisiones(unittest.TestCase):
         base = metodos("class S:\n    def test_algo(self):\n        pass\n")
         a = metodos("class S:\n    def test_algo(self):\n        pass\n\n    def test_40_a(self):\n        pass\n")
         b = metodos("class S:\n    def test_algo(self):\n        pass\n\n    def test_40_b(self):\n        pass\n")
-        # Sin base: el heredado también dispara (ruido).
-        self.assertEqual(len(colisiones(a, b, incluir_mismo_nombre=True)), 2)
+        # Sin base, el heredado idéntico ya no dispara colisión: lo publica
+        # ``identicos``. El ruido que quedaba era el del cuerpo idéntico.
+        self.assertEqual(len(colisiones(a, b, incluir_mismo_nombre=True)), 1)
+        self.assertEqual(len(identicos(a, b)), 1)
         self.assertEqual(colisiones(nuevos(base, a), nuevos(base, b), incluir_mismo_nombre=True), [(nuevos(base, a)[0], nuevos(base, b)[0])])
 
     def test_distinta_clase_no_se_pisa(self):
@@ -132,3 +134,31 @@ class TestColisiones(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDuplicadoIdentico(unittest.TestCase):
+    """Mismo nombre y mismo cuerpo: el merge repite el método, no lo pierde."""
+
+    IGUAL = "class S:\n    def test_algo(self):\n        self.assertEqual(2 + 2, 4)\n"
+
+    def test_mismo_def_en_las_dos_ramas_no_es_colision(self):
+        a, b = metodos(self.IGUAL), metodos(self.IGUAL)
+        self.assertEqual(colisiones(a, b, incluir_mismo_nombre=True), [])
+        self.assertEqual(len(identicos(a, b)), 1)
+
+    def test_cuerpo_distinto_sigue_siendo_colision(self):
+        a = metodos(self.IGUAL)
+        b = metodos("class S:\n    def test_algo(self):\n        self.assertTrue(True)\n")
+        self.assertEqual(len(colisiones(a, b, incluir_mismo_nombre=True)), 1)
+        self.assertEqual(identicos(a, b), [])
+
+    def test_la_huella_no_depende_de_la_linea(self):
+        a = metodos(self.IGUAL)
+        b = metodos("\n\n" + self.IGUAL)
+        self.assertNotEqual(a[0].linea, b[0].linea)
+        self.assertEqual(a[0].huella, b[0].huella)
+        self.assertEqual(len(identicos(a, b)), 1)
+
+    def test_sin_la_regla_de_nombre_no_hay_identicos(self):
+        a, b = metodos(self.IGUAL), metodos(self.IGUAL)
+        self.assertEqual(identicos(a, b, incluir_mismo_nombre=False), [])

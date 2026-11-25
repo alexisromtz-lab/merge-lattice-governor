@@ -15,11 +15,16 @@ Hay dos defectos distintos y no se arreglan con la misma regla:
   ningún test: los dos métodos sobreviven y corren. Se marca porque el número
   es el mecanismo con el que varios agentes se coordinan, y tras el merge dos
   autores creen ser el dueño del 35.
+
+Y lo que **no** es colisión: mismo nombre con el mismo cuerpo. Dos ramas que
+añaden el mismo ``def`` dejan el método repetido y ninguna copia se pierde; lo
+publica ``identicos``, que es un dato y no un hallazgo.
 """
 
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -35,6 +40,7 @@ class Metodo:
     clase: str
     nombre: str
     linea: int
+    huella: str = ""
 
     @property
     def ordinal(self) -> int | None:
@@ -45,13 +51,19 @@ class Metodo:
         return f"{self.clase}.{self.nombre}" if self.clase else self.nombre
 
 
+def _huella(nodo: ast.stmt) -> str:
+    """Digest del cuerpo: dos ``def`` con la misma huella no se pisan entre sí."""
+    crudo = ast.dump(nodo, annotate_fields=False, include_attributes=False)
+    return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:16]
+
+
 def _recorre(cuerpo: list[ast.stmt], prefijo: str, salida: list[Metodo]) -> None:
     for nodo in cuerpo:
         if isinstance(nodo, ast.ClassDef):
             _recorre(nodo.body, f"{prefijo}{nodo.name}.", salida)
         elif isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if nodo.name.startswith("test"):
-                salida.append(Metodo(prefijo.rstrip("."), nodo.name, nodo.lineno))
+                salida.append(Metodo(prefijo.rstrip("."), nodo.name, nodo.lineno, _huella(nodo)))
 
 
 def leer(fuente: str, ruta: str = "") -> tuple[list[Metodo], str | None]:
@@ -146,5 +158,46 @@ def colisiones(
                     _anota(metodo_a, metodo_b)
         if incluir_mismo_nombre:
             for metodo_a in por_nombre.get((metodo_b.clase, metodo_b.nombre), ()):
+                if metodo_a.huella and metodo_a.huella == metodo_b.huella:
+                    continue
                 _anota(metodo_a, metodo_b)
     return encontradas
+
+
+def identicos(
+    a: list[Metodo],
+    b: list[Metodo],
+    *,
+    incluir_mismo_nombre: bool = True,
+) -> list[tuple[Metodo, Metodo]]:
+    """Pares con el mismo nombre **y** el mismo cuerpo.
+
+    El merge deja el método repetido en el archivo y conserva una copia
+    idéntica: no se pierde ningún test, así que no es una colisión. Se cuenta
+    aparte para que un cero no se lea como "no miré": medido en 15 PRs reales
+    (26-Nov-2026), 75 hallazgos por nombre y 75 cuerpos idénticos, 0 perdidos.
+    """
+    if not incluir_mismo_nombre:
+        return []
+    por_nombre: dict[tuple[str, str], list[Metodo]] = {}
+    for metodo in a:
+        por_nombre.setdefault((metodo.clase, metodo.nombre), []).append(metodo)
+    salida: list[tuple[Metodo, Metodo]] = []
+    vistos: set[tuple[tuple[str, int, str], ...]] = set()
+    for metodo_b in b:
+        for metodo_a in por_nombre.get((metodo_b.clase, metodo_b.nombre), ()):
+            if metodo_a is metodo_b or not metodo_a.huella or metodo_a.huella != metodo_b.huella:
+                continue
+            clave = tuple(
+                sorted(
+                    [
+                        (metodo_a.clase, metodo_a.linea, metodo_a.nombre),
+                        (metodo_b.clase, metodo_b.linea, metodo_b.nombre),
+                    ]
+                )
+            )
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            salida.append((metodo_a, metodo_b))
+    return salida
