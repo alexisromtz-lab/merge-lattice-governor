@@ -1,5 +1,7 @@
 # merge-lattice-governor
 
+[![ci](https://github.com/alexisromtz-lab/merge-lattice-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/alexisromtz-lab/merge-lattice-governor/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![deps](https://img.shields.io/badge/dependencies-0-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue)
+
 **El orden en que aterrizas tus ramas decide si el trinquete aguanta.** Este CLI mide las
 masas de cada rama, comprueba qué parejas conmutan de verdad (texto **y** símbolos), y
 resuelve por programación dinámica la secuencia exacta en la que **cada prefijo** sigue
@@ -245,3 +247,13 @@ contrato declarada, no una discrepancia escondida; los otros tres huecos (rama s
 ## Licencia
 
 MIT. Ver [LICENSE](LICENSE).
+
+## La familia
+
+Tres paquetes con cero dependencias, probados en 3.11, 3.12 y 3.13:
+
+| paquete | qué contesta |
+|---|---|
+| [composicion-core](https://github.com/alexisromtz-lab/composicion-core) | ¿dos ramas declaran el mismo test? predicado + corpus + juez de paridad |
+| [py-test-shadow-guard](https://github.com/alexisromtz-lab/py-test-shadow-guard) | el test que el merge borra en silencio, en tu CI |
+| [merge-lattice-governor](https://github.com/alexisromtz-lab/merge-lattice-governor) | en qué orden aterrizar N ramas sin romper el trinquete |
