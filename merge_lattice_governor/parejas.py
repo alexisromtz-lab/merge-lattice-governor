@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from itertools import combinations
 
 from . import repo as R
-from .sombra import colisiones, metodos
+from .sombra import colisiones, metodos, nuevos
 
 CONMUTA_LIMPIO = "CONMUTA_LIMPIO"
 COLISION_SIMBOLICA_AST = "COLISION_SIMBOLICA_AST"
@@ -57,7 +57,11 @@ def _simbolicas(repo: str, a: str, b: str, base: str) -> tuple[str, ...]:
         fuente_b = R.leer(repo, b, ruta)
         if fuente_a is None or fuente_b is None:
             continue
-        for metodo_a, metodo_b in colisiones(metodos(fuente_a), metodos(fuente_b)):
+        base_src = R.leer(repo, base, ruta) or ""
+        heredados = metodos(base_src)
+        nuevos_a = nuevos(heredados, metodos(fuente_a))
+        nuevos_b = nuevos(heredados, metodos(fuente_b))
+        for metodo_a, metodo_b in colisiones(nuevos_a, nuevos_b, incluir_mismo_nombre=True):
             hallazgos.append(
                 f"{ruta}:{metodo_a.clase}.{metodo_a.nombre} vs {ruta}:{metodo_b.clase}.{metodo_b.nombre}"
             )

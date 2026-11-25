@@ -109,9 +109,18 @@ Un instrumento honesto dice dónde deja de ver.
   forma de tres argumentos, que no escribe objetos en el ODB: el discriminante son las
   marcas `<<<<<<< .our`, porque `changed in both` aparece también en los merges limpios
   (verificado: `merge-tree` devuelve **RC 0 siempre**).
-- **Colisión simbólica: Python y métodos de test.** Se detectan `def test_NN…` con ordinal,
-  en clases anidadas incluidas. No cubre `pytest` parametrizado, `setattr` dinámico ni
-  otros lenguajes.
+- **Colisión simbólica: Python y métodos de test.** Se detectan `def test_NN…` con ordinal
+  y también los `def test_*` sin ordinal (mismo nombre en la misma clase: el segundo pisa al
+  primero). El filtro por la base de la pareja evita que un test heredado cuente como
+  colisión. No cubre `pytest` parametrizado, `setattr` dinámico ni otros lenguajes.
+- **El plan no propone una pareja que choca.** Una colisión simbólica no la arregla el
+  orden: si dos ramas declaran el mismo test, sólo una puede aterrizar. El planificador
+  recibe el grafo de parejas incompatibles y elige un conjunto independiente, así que la
+  excluida **aparece por su nombre** en `excluidas` y el proceso sale con RC 1 (`PARADA`).
+  El instrumento no elige por ti cuál de las dos sobrevive: eso es una decisión tuya.
+- **Compone parejas, no audita una rama sola.** Un archivo con dos `def test_07_*` en la
+  misma clase es una colisión interna de esa rama y este paquete no la busca: su unidad es
+  el par. Para eso está `py-test-shadow-guard`.
 - **Exacto hasta `--max-n` (18).** Por encima, el plan pasa a voraz y lo **dice**
   (`exacto: false`): un plan voraz sigue respetando la solvencia de cada prefijo, pero ya
   no garantiza el máximo número de ramas integradas.
@@ -127,6 +136,20 @@ Un instrumento honesto dice dónde deja de ver.
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
+
+## Conformidad medida
+
+El predicado de colisión de este paquete se mide contra
+[`composicion-core`](https://github.com/alexisromtz-lab/composicion-core), que publica el
+corpus de conformidad como datos y puntúa a cada herramienta contra él:
+
+```bash
+composicion-core --sonda governor --ruta .
+```
+
+Marcador del 26-Nov-2026: **8 rojo · 8 aviso · 6 no_medido · 0 discrepancias · 4 no comparables**. `composicion-core` no es una dependencia
+—estos paquetes siguen sin dependencias para poder correr con `uvx`— sino un juez
+externo: si los dos divergen, el que se equivoca se ve.
 
 ## Licencia
 

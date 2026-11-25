@@ -104,5 +104,39 @@ class TestCotaGreedy(unittest.TestCase):
         self.assertTrue(all(h > 0 for h in plan.trayectoria))
 
 
+class TestGrafoDeConflicto(unittest.TestCase):
+    """Un choque simbólico no lo arregla el orden: el plan elige un independiente."""
+
+    def _dos_que_chocan(self):
+        return [Rama("4f05d2c", Masa(0, 100, 0)), Rama("dedf611", Masa(0, 100, 0))]
+
+    def test_sin_restriccion_integra_las_dos(self):
+        plan = planificar(self._dos_que_chocan(), 100.0)
+        self.assertEqual(plan.integradas, 2)
+
+    def test_con_la_pareja_marcada_solo_entra_una(self):
+        plan = planificar(self._dos_que_chocan(), 100.0, intocables={0: 0b10, 1: 0b01})
+        self.assertEqual(plan.integradas, 1)
+        self.assertFalse(plan.completo)
+        self.assertEqual(len(plan.excluidas), 1)
+        self.assertNotIn(plan.excluidas[0], plan.orden)
+
+    def test_el_voraz_tambien_respeta_el_grafo(self):
+        ramas = [Rama(f"r{i:02d}", Masa(0, 100, 0)) for i in range(20)]
+        plan = planificar(ramas, 100.0, maximo_exacto=4, intocables={0: 0b10, 1: 0b01})
+        self.assertFalse(plan.exacto)
+        self.assertEqual(plan.integradas, 19)
+
+    def test_un_conflicto_no_impide_integrar_el_resto(self):
+        ramas = [
+            Rama("a", Masa(0, 90, 0)),
+            Rama("b", Masa(0, 90, 0)),
+            Rama("c", Masa(0, 90, 0)),
+        ]
+        plan = planificar(ramas, 50.0, intocables={0: 0b10, 1: 0b01})
+        self.assertEqual(sorted(plan.orden), ["a", "c"])
+        self.assertEqual(plan.excluidas, ("b",))
+
+
 if __name__ == "__main__":
     unittest.main()

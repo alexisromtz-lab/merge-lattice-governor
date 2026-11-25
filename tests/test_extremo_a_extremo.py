@@ -135,7 +135,15 @@ class TestMatrizYPlan(unittest.TestCase):
         self.assertEqual(pareja["textual"], [])
         self.assertEqual(pareja["clase"], "COLISION_SIMBOLICA_AST")
         self.assertTrue(pareja["simbolica"])
-        self.assertEqual(datos["plan"]["excluidas"], [])
+
+    def test_una_colision_simbolica_saca_una_rama_del_plan(self):
+        # El merge entra limpio y Python se queda con un solo metodo: planificar
+        # las dos seria el mismo verde falso que la matriz acaba de cerrar.
+        _, datos = self._json("simbolica_p", "simbolica_q")
+        excluidas = datos["plan"]["excluidas"]
+        self.assertEqual(len(excluidas), 1)
+        self.assertEqual(len(datos["plan"]["orden"]), 1)
+        self.assertNotIn(excluidas[0], datos["plan"]["orden"])
 
     def test_las_dos_ramas_de_test_se_clasifican_como_arnes(self):
         _, datos = self._json("simbolica_p", "simbolica_q")

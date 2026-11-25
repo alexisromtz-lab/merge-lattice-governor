@@ -5,6 +5,12 @@ secuencia mantenga la holgura > 0. Como la holgura final de un conjunto no
 depende del orden (el delta es aditivo), basta una programación dinámica sobre
 subconjuntos: ``factible[S]`` es cierto si algún orden de S deja todos sus
 prefijos solventes, y la transición vuelve a comprobar el prefijo nuevo.
+
+Encima de la solvencia hay una restricción que **no depende del orden**: dos
+ramas con colisión simbólica no pueden aterrizar las dos, porque Python
+sobrescribe un test y el merge entra limpio. Eso es un grafo de conflicto, no
+una secuencia: el plan elige un conjunto independiente. Ordenar mejor no lo
+arregla.
 """
 
 from __future__ import annotations
@@ -56,15 +62,18 @@ def planificar(
     ratio: float = RATIO_LINEA_BASE,
     banda: float = BANDA_TECHO,
     maximo_exacto: int = MAXIMO_EXACTO,
+    intocables: dict[int, int] | None = None,
 ) -> Plan:
+    """``intocables[i]`` es la máscara de ramas que no pueden coexistir con ``i``."""
     if not ramas:
         return Plan((), (), (), True, holgura_inicial)
 
     deltas = [r.masa.delta(ratio, banda) for r in ramas]
     n = len(ramas)
+    choques = intocables or {}
 
     if n > maximo_exacto:
-        return _voraz(ramas, deltas, holgura_inicial)
+        return _voraz(ramas, deltas, holgura_inicial, choques)
 
     total = 1 << n
     acumulado = [0.0] * total
@@ -83,6 +92,8 @@ def planificar(
             bit = 1 << i
             if mask & bit:
                 continue
+            if mask & choques.get(i, 0):
+                continue
             if base + deltas[i] > 0:
                 factible[mask | bit] = 1
 
@@ -99,16 +110,21 @@ def planificar(
     return _ensamblar(ramas, deltas, indices, holgura_inicial, exacto=True)
 
 
-def _voraz(ramas: list[Rama], deltas: list[float], h0: float) -> Plan:
+def _voraz(ramas: list[Rama], deltas: list[float], h0: float, choques: dict[int, int] | None = None) -> Plan:
     """Fuera de la cota exacta: gana el mayor delta entre los que caben."""
+    choques = choques or {}
     pendientes = sorted(range(len(ramas)), key=lambda i: (-deltas[i], ramas[i].clave))
     elegidos: list[int] = []
+    bloqueadas = 0
     holgura = h0
     while pendientes:
         for posicion, i in enumerate(pendientes):
+            if bloqueadas & (1 << i):
+                continue
             if holgura + deltas[i] > 0:
                 elegidos.append(i)
                 holgura += deltas[i]
+                bloqueadas |= choques.get(i, 0)
                 pendientes.pop(posicion)
                 break
         else:

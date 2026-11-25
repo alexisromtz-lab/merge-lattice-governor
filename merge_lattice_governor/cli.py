@@ -44,6 +44,26 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+def _intocables(ramas: list, matriz: list) -> dict[int, int]:
+    """Máscara de ramas que no pueden coexistir, por índice de `ramas`.
+
+    Una colisión simbólica no la arregla el orden: si a y b declaran el mismo
+    test, sólo puede aterrizar una. El planificador recibe esa restricción como
+    grafo, no como preferencia.
+    """
+    indice = {r.clave: i for i, r in enumerate(ramas)}
+    mascaras: dict[int, int] = {}
+    for pareja in P.incompatibles(matriz):
+        if pareja.clase != P.COLISION_SIMBOLICA_AST:
+            continue
+        i, j = indice.get(pareja.a), indice.get(pareja.b)
+        if i is None or j is None or i == j:
+            continue
+        mascaras[i] = mascaras.get(i, 0) | (1 << j)
+        mascaras[j] = mascaras.get(j, 0) | (1 << i)
+    return mascaras
+
+
 def _ramas(repo: str, base: str, refs: list[str], ratio: float, banda: float) -> list[Rama]:
     salida: list[Rama] = []
     for ref in refs:
@@ -188,7 +208,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"RC 2 · {error}", file=sys.stderr)
             return RC_ENTRADA
 
-    plan = planificar(ramas, args.holgura_inicial, ratio=args.ratio, banda=args.banda, maximo_exacto=args.max_n)
+    intocables = _intocables(ramas, matriz)
+    plan = planificar(
+        ramas,
+        args.holgura_inicial,
+        ratio=args.ratio,
+        banda=args.banda,
+        maximo_exacto=args.max_n,
+        intocables=intocables,
+    )
 
     if args.json:
         print(json.dumps(_carga_json(args.repo, args.base, ramas, matriz, plan, args.holgura_inicial, args.ratio, args.banda), ensure_ascii=False, indent=2))

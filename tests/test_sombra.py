@@ -1,6 +1,6 @@
 import unittest
 
-from merge_lattice_governor.sombra import colisiones, metodos
+from merge_lattice_governor.sombra import colisiones, metodos, nuevos
 
 FUENTE = '''
 import unittest
@@ -55,9 +55,27 @@ class TestColisiones(unittest.TestCase):
         b = metodos("class S:\n    def test_35_beta(self):\n        pass\n")
         self.assertEqual(len(colisiones(a, b)), 1)
 
-    def test_mismo_nombre_es_el_mismo_test(self):
+    def test_por_defecto_el_mismo_nombre_no_dispara(self):
+        # Compatibilidad del contrato: sin la marca, la regla del nombre no corre.
         a = metodos("class S:\n    def test_35_alfa(self):\n        pass\n")
         self.assertEqual(colisiones(a, a), [])
+
+    def test_mismo_nombre_en_la_misma_clase_es_colision_cuando_se_pide(self):
+        # Lo que merge-tree no ve: dos ramas insertan el mismo def y una gana.
+        a = metodos("class S:\n    def test_algo(self):\n        pass\n")
+        b = metodos("class S:\n    def test_algo(self):\n        return 2\n")
+        self.assertEqual(colisiones(a, b, incluir_mismo_nombre=True), [(a[0], b[0])])
+
+    def test_un_metodo_sin_ordinal_tambien_se_extrae(self):
+        self.assertEqual(len(metodos("class S:\n    def test_algo(self):\n        pass\n")), 1)
+
+    def test_lo_heredado_de_la_base_no_es_colision_de_la_pareja(self):
+        base = metodos("class S:\n    def test_algo(self):\n        pass\n")
+        a = metodos("class S:\n    def test_algo(self):\n        pass\n\n    def test_40_a(self):\n        pass\n")
+        b = metodos("class S:\n    def test_algo(self):\n        pass\n\n    def test_40_b(self):\n        pass\n")
+        # Sin base: el heredado también dispara (ruido).
+        self.assertEqual(len(colisiones(a, b, incluir_mismo_nombre=True)), 2)
+        self.assertEqual(colisiones(nuevos(base, a), nuevos(base, b), incluir_mismo_nombre=True), [(nuevos(base, a)[0], nuevos(base, b)[0])])
 
     def test_distinta_clase_no_se_pisa(self):
         a = metodos("class A:\n    def test_35_x(self):\n        pass\n")
