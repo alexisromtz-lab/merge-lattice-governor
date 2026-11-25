@@ -122,27 +122,44 @@ def _oraculo(repo: str) -> str:
     return raiz
 
 
-def _causa_merge_tree(proc: subprocess.CompletedProcess, a: str, b: str) -> str:
+def _es_superficial(repo: str) -> bool:
+    """``True`` si el clon no tiene historia: la base de la pareja puede faltar."""
+    proc = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--is-shallow-repository"],
+        capture_output=True, text=True,
+    )
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
+
+
+def _causa_merge_tree(
+    proc: subprocess.CompletedProcess, a: str, b: str, repo: str | None = None
+) -> str:
     """RC que no es 0 ni 1: nombra la causa, no el síntoma.
 
-    Medido el 26-Nov-2026 en un clon ``--filter=blob:none``: ``merge-tree`` sale
-    RC 128 con ``unable to read blob object …``. Es un clon parcial, no un git
-    viejo ni un conflicto: el remedio es traer los blobs, y sin nombrarlo el
-    operador lee el fallo como que la herramienta no sirve.
+    Medido el 26-Nov-2026, dos clones distintos y dos causas distintas detrás del
+    mismo RC 128: en un clon ``--filter=blob:none`` el mensaje es ``unable to read
+    blob object …``; en un clon ``--depth 1`` es ``Could not read <oid>`` y el
+    remedio es ``git fetch --unshallow``. Un solo texto para las dos mandaba al
+    operador a arreglar lo que no estaba roto (medido el 27-Nov-2026 en el
+    cold-clone de la propia v0.5.0, que se diagnosticó como «clon parcial»).
     """
     linea = (proc.stderr or proc.stdout).strip().splitlines()
     cola = f" · {linea[0]}" if linea else ""
-    pista = ""
-    if "unable to read blob" in cola or "promisor" in cola.lower():
-        pista = (
-            " · clon parcial: el predicado exacto lee blobs que el filtro no trajo;"
+    baja = cola.lower()
+    if "unable to read blob" in baja or "promisor" in baja:
+        causa = (
+            "clon parcial: el predicado exacto lee blobs que el filtro no trajo;"
             " remedio: clonar sin --filter (medido: `git fetch --refetch` repuebla"
             " casi todo y aun así dejó un blob pendiente)"
         )
-    return (
-        f"merge-tree --write-tree {a} {b}: RC {proc.returncode}{cola}"
-        f" · sin --write-tree este git no puede distinguir un conflicto de driver{pista}"
-    )
+    elif "could not read" in baja or (repo is not None and _es_superficial(repo)):
+        causa = (
+            "clon superficial: la base de la pareja no está en el clon y sin ella no"
+            " hay tres bandas; remedio: `git fetch --unshallow`"
+        )
+    else:
+        causa = "sin --write-tree este git no puede distinguir un conflicto de driver"
+    return f"merge-tree --write-tree {a} {b}: RC {proc.returncode}{cola} · {causa}"
 
 
 def rutas_en_conflicto(repo: str, a: str, b: str) -> tuple[str, ...]:
@@ -167,7 +184,7 @@ def rutas_en_conflicto(repo: str, a: str, b: str) -> tuple[str, ...]:
         capture_output=True, text=True, errors="replace", check=False,
     )
     if proc.returncode not in (0, 1):
-        raise ErrorGit(_causa_merge_tree(proc, a, b))
+        raise ErrorGit(_causa_merge_tree(proc, a, b, repo))
     cabecera = proc.stdout.split("\n\n", 1)[0].splitlines()
     rutas = tuple(sorted(linea.strip() for linea in cabecera[1:] if linea.strip()))
     if proc.returncode == 1 and not rutas:

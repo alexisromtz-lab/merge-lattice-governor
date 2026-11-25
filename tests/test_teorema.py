@@ -7,6 +7,7 @@ atajo **exacto**, y un atajo sin diferencial es una opinión.
 
 import json
 import subprocess
+import tempfile
 import unittest
 
 from merge_lattice_governor import parejas as P
@@ -181,6 +182,26 @@ class ClonParcial(Base):
         self.assertIn("RC 128", causa)
         self.assertIn("clon parcial", causa)
         self.assertIn("--filter", causa, "la causa sin remedio deja al operador parado")
+
+    def test_rc_128_en_clon_superficial_no_se_disfraza_de_clon_parcial(self):
+        """Medido el 27-Nov-2026: un clon ``--depth 1`` de la propia v0.5.0 salió
+        «clon parcial · clonar sin --filter», y el remedio era otro."""
+        proc = subprocess.CompletedProcess(
+            args=["git"], returncode=128, stdout="",
+            stderr="error: Could not read fffb64633adf9d8ceb45fbbf9caee1df5bffda70\n",
+        )
+        causa = R._causa_merge_tree(proc, "a", "b")
+        self.assertIn("clon superficial", causa)
+        self.assertIn("--unshallow", causa, "la causa sin remedio deja al operador parado")
+        self.assertNotIn("clon parcial", causa)
+        self.assertNotIn("no puede distinguir", causa, "la cola genérica sobra cuando la causa se nombra")
+
+    def test_la_superficialidad_se_mide_y_no_se_supone(self):
+        """Un directorio sin git, y un repo sin recortar, no son «superficiales»."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(R._es_superficial(tmp))
+            self.assertEqual(subprocess.run(["git", "-C", tmp, "init", "-q"], capture_output=True).returncode, 0)
+            self.assertFalse(R._es_superficial(tmp), "git init: historia completa por construcción")
 
     def test_rc_128_por_otra_causa_no_se_disfraza_de_clon_parcial(self):
         proc = subprocess.CompletedProcess(
