@@ -460,3 +460,55 @@ class TestDuplicadoIdenticoExtremo(unittest.TestCase):
         self.assertEqual(rc, 0, salida)
         self.assertIn("DUPLICADOS_IDENTICOS", salida)
         self.assertIn("mirado, no ausente", salida)
+
+
+class TestTextualEnElPlan(unittest.TestCase):
+    """El OPERAR del plan no puede imprimir un `git merge` que se detiene.
+
+    Un conflicto textual no excluye la rama —se resuelve a mano—, pero el paso
+    que la integra sí choca. Medido el 26-Nov-2026 sobre 105 parejas reales:
+    61 de 105 son textuales, así que el primer uso del plan choca seguro.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = RepoDePrueba()
+        cls.repo.rama("choca", "app.py", APP.replace("v0 = 0", "v0 = 100"))
+        cls.repo.rama("choca2", "app.py", APP.replace("v0 = 0", "v0 = 999"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.repo.cerrar()
+
+    def _json(self, *refs, h0="10"):
+        args = ["--base", "main", "--holgura-inicial", h0, "--json"]
+        for ref in refs:
+            args += ["--ref", ref]
+        rc, salida = _corre(self.repo.path, *args)
+        return rc, json.loads(salida)
+
+    def test_el_paso_tardio_lleva_el_aviso(self):
+        rc, datos = self._json("choca", "choca2")
+        self.assertEqual(rc, 1)
+        orden = datos["plan"]["orden"]
+        self.assertEqual(len(orden), 2)
+        filas = datos["plan"]["textual_en_plan"]
+        self.assertEqual(len(filas), 1, filas)
+        fila = filas[0]
+        self.assertEqual(fila["rama"], orden[-1])
+        self.assertEqual(fila["con"], orden[0])
+        self.assertEqual(fila["posicion"], 2)
+        self.assertIn("app.py", fila["rutas"])
+
+    def test_el_texto_imprime_el_aviso_bajo_el_merge(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10",
+            "--ref", "choca", "--ref", "choca2",
+        )
+        self.assertEqual(rc, 1, salida)
+        lineas = salida.splitlines()
+        merges = [i for i, l in enumerate(lineas) if "merge --no-ff" in l]
+        self.assertEqual(len(merges), 2)
+        aviso = lineas[merges[1] + 1]
+        self.assertIn("⚠ conflicto textual con", aviso)
+        self.assertIn("app.py", aviso)

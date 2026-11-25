@@ -112,6 +112,27 @@ def _criterio(pesos: dict[str, float]) -> str:
     return f"declarado · {detalle} · resto 1"
 
 
+def _textual_en_plan(matriz: Sequence[P.Pareja], orden: Sequence[str]) -> list[dict]:
+    """Pares textuales con **las dos** ramas dentro del plan.
+
+    Un conflicto textual no excluye la rama (se resuelve a mano), pero el
+    ``git merge`` del plan se detiene en ese paso. Sin decirlo, el OPERAR que
+    esta herramienta imprime falla en la primera rama del par.
+    """
+    posicion = {nombre: i for i, nombre in enumerate(orden)}
+    filas: list[dict] = []
+    for p in P.incompatibles(matriz):
+        if p.clase != P.CONFLICTO_TEXTUAL:
+            continue
+        if p.a not in posicion or p.b not in posicion:
+            continue
+        tarde, antes = (p.a, p.b) if posicion[p.a] > posicion[p.b] else (p.b, p.a)
+        filas.append(
+            {"rama": tarde, "posicion": posicion[tarde] + 1, "con": antes, "rutas": list(p.textual)}
+        )
+    return sorted(filas, key=lambda f: (f["posicion"], f["rama"]))
+
+
 def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan, h0: float, ratio: float, banda: float, criterio: str) -> str:
     lineas: list[str] = []
     tronco = R.resolver(repo, base)[:8]
@@ -159,11 +180,19 @@ def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan
 
     if plan.orden:
         por_nombre = {r.nombre: r for r in ramas}
+        choques: dict[str, list[dict]] = {}
+        for fila in _textual_en_plan(matriz, plan.orden):
+            choques.setdefault(fila["rama"], []).append(fila)
         lineas.append("OPERAR (un solo push al final)")
         for nombre in plan.orden:
             lineas.append(
                 f'  git -C {repo} merge --no-ff {por_nombre[nombre].ref} -m "merge: {nombre}"'
             )
+            for fila in choques.get(nombre, []):
+                lineas.append(
+                    f"    ⚠ conflicto textual con {fila['con']} en "
+                    f"{', '.join(fila['rutas'])}: el merge se detiene, resuelve y commitea"
+                )
     return "\n".join(lineas)
 
 
@@ -232,6 +261,7 @@ def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio) -> 
             "trayectoria": list(plan.trayectoria),
             "excluidas": list(plan.excluidas),
             "holgura_final": round(plan.holgura_final, 4),
+            "textual_en_plan": _textual_en_plan(matriz, plan.orden),
         },
     }
 

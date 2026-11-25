@@ -100,6 +100,18 @@ modo.
 Además del plan, imprime un bloque `OPERAR` con las líneas `git merge --no-ff` en el orden
 resuelto — el plan no es una opinión, es un guion ejecutable.
 
+Un conflicto textual **no** excluye la rama: se resuelve a mano y sigue. Pero el `git merge`
+de ese paso sí se detiene, así que el guion lo dice debajo:
+
+```
+  git -C . merge --no-ff origin/pr-401 -m "merge: pr-401"
+    ⚠ conflicto textual con pr-402 en tools/panel.py: el merge se detiene, resuelve y commitea
+```
+
+Medido el 26-Nov-2026 sobre una cola real de 15 PRs: **61 de 105 parejas** son textuales. Un
+plan que imprimiera `git merge` sin ese aviso fallaría en el primer paso del par, y quien lo
+corre por primera vez leería el fallo como que la herramienta no funciona.
+
 ## Ejemplo real
 
 Corrida sobre un tronco de 209 713 líneas de producto. Holgura inicial **−1 020,35**
@@ -202,7 +214,7 @@ necesita saber en cuál está para leerlo:
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
 | `resumen` | objeto o `null` | `null` en rama sola: 0 pares no es un resumen |
 | `sola` | objeto o `null` | sólo en `--sin-plan --ref R` |
-| `plan` | objeto o `null` | `null` cuando no hay holgura que decidir |
+| `plan` | objeto o `null` | `null` cuando no hay holgura que decidir; `plan.textual_en_plan[]` lista `{rama, posicion, con, rutas}` de los pasos que se detienen |
 
 Las claves están siempre: una clave que aparece condicionalmente convierte «no hay» en «no
 sé» — medido el 25-Nov-2026 con un consumidor propio que se rompía en `datos["ilegibles"]`
