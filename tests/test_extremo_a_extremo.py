@@ -3,7 +3,7 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 from merge_lattice_governor.cli import main
 
@@ -65,7 +65,7 @@ class RepoDePrueba:
 
 def _corre(repo, *args):
     salida = []
-    with redirect_stdout(_Captura(salida)):
+    with redirect_stdout(_Captura(salida)), redirect_stderr(_Captura(salida)):
         rc = main(["--repo", repo, *args])
     return rc, "".join(salida)
 
@@ -172,6 +172,244 @@ class TestMatrizYPlan(unittest.TestCase):
         self.assertIn("OPERAR", salida)
         self.assertIn("git -C", salida)
         self.assertIn("merge --no-ff", salida)
+
+
+class TestTestigoYMatrizSola(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = RepoDePrueba()
+        cls.repo.rama(
+            "simbolica_p", "tests/test_suite.py", _suite_con("    def test_102_m102(self):", ALFA)
+        )
+        cls.repo.rama(
+            "simbolica_q", "tests/test_suite.py", _suite_con("    def test_150_m150(self):", BETA)
+        )
+        cls.repo.rama("choca", "app.py", APP.replace("v0 = 0", "v0 = 100"))
+        cls.repo.rama("choca2", "app.py", APP.replace("v0 = 0", "v0 = 999"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.repo.cerrar()
+
+    def test_el_testigo_da_archivo_linea_y_rama(self):
+        _, datos = self._json("simbolica_p", "simbolica_q")
+        testigo = datos["parejas"][0]["simbolica"][0]
+        self.assertRegex(
+            testigo,
+            r"^tests/test_suite\.py:\d+@simbolica_p Suite\.test_35_alfa vs "
+            r"tests/test_suite\.py:\d+@simbolica_q Suite\.test_35_beta$",
+        )
+
+    def test_la_linea_del_testigo_apunta_al_def_de_verdad(self):
+        # Un testigo con la linea equivocada manda al operador a otro sitio.
+        _, datos = self._json("simbolica_p", "simbolica_q")
+        testigo = datos["parejas"][0]["simbolica"][0]
+        for lado in testigo.split(" vs "):
+            ruta, resto = lado.split(":", 1)
+            linea, ref = resto.split("@", 1)
+            ref, _ = ref.split(" ", 1)
+            fuente = self.repo._git("show", f"{ref}:{ruta}").splitlines()
+            self.assertIn("test_35_", fuente[int(linea) - 1], lado)
+
+    def test_sin_plan_no_exige_holgura(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--sin-plan",
+            "--ref", "choca", "--ref", "choca2",
+        )
+        self.assertEqual(rc, 0, salida)
+        self.assertIn("PLAN: NO_MEDIDO", salida)
+
+    def test_sin_plan_es_rc_1_si_hay_colision_simbolica(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--sin-plan",
+            "--ref", "simbolica_p", "--ref", "simbolica_q",
+        )
+        self.assertEqual(rc, 1)
+        self.assertIn("COLISION_SIMBOLICA_AST", salida)
+
+    def test_sin_plan_json_no_inventa_un_plan(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--sin-plan", "--json",
+            "--ref", "choca", "--ref", "choca2",
+        )
+        datos = json.loads(salida)
+        self.assertIsNone(datos["plan"])
+        self.assertEqual(datos["parejas"][0]["clase"], "CONFLICTO_TEXTUAL")
+
+    def test_prioridad_desconocida_es_rc_2(self):
+        rc, _ = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10",
+            "--ref", "choca", "--prioridad", "no-existe=3",
+        )
+        self.assertEqual(rc, 2)
+
+    def _json(self, *refs):
+        args = ["--base", "main", "--holgura-inicial", "10", "--json"]
+        for ref in refs:
+            args += ["--ref", ref]
+        rc, salida = _corre(self.repo.path, *args)
+        return rc, json.loads(salida)
+
+
+class TestIlegibleYRamaSola(unittest.TestCase):
+    """Un archivo que no compila no es un par limpio, y una rama sola no es 0 pares."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = RepoDePrueba()
+        cls.repo.rama("sana", "tests/test_suite.py", _suite_con("    def test_102_m102(self):", ALFA))
+        cls.repo.rama(
+            "rota",
+            "tests/test_suite.py",
+            ("\n".join(_suite_base()) + "\n").replace("import unittest", "import unittest("),
+        )
+        cls.repo.rama(
+            "duplicada",
+            "tests/test_dup.py",
+            "\n".join(
+                [
+                    "import unittest",
+                    "",
+                    "",
+                    "class S(unittest.TestCase):",
+                    "    def test_06_x(self):",
+                    "        pass",
+                    "",
+                    "    def test_06_y(self):",
+                    "        pass",
+                    "",
+                ]
+            ),
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.repo.cerrar()
+
+    def test_un_archivo_ilegible_no_es_un_par_limpio(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--sin-plan", "--ref", "sana", "--ref", "rota"
+        )
+        self.assertEqual(rc, 2, salida)
+        self.assertIn("NO_MEDIDO 1", salida)
+        self.assertIn("tests/test_suite.py: no se puede leer como Python (SyntaxError)", salida)
+
+    def test_un_archivo_ilegible_no_se_declara_limpio_en_json(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--sin-plan", "--json",
+            "--ref", "sana", "--ref", "rota",
+        )
+        datos = json.loads(salida)
+        self.assertEqual(rc, 2)
+        pareja = datos["parejas"][0]
+        self.assertEqual(pareja["clase"], "NO_MEDIDO")
+        self.assertEqual(len(pareja["ilegibles"]), 1)
+        self.assertEqual(datos["resumen"]["NO_MEDIDO"], 1)
+
+    def test_una_rama_sola_se_audita_y_su_duplicado_es_rc_1(self):
+        rc, salida = _corre(self.repo.path, "--base", "main", "--sin-plan", "--ref", "duplicada")
+        self.assertEqual(rc, 1, salida)
+        self.assertIn("duplicados internos 1 · ilegibles 0", salida)
+        testigos = [linea for linea in salida.splitlines() if " vs " in linea]
+        self.assertEqual(len(testigos), 1, salida)
+        self.assertIn("tests/test_dup.py:", testigos[0])
+        self.assertIn("S.test_06_y", testigos[0])
+        self.assertIn("S.test_06_x", testigos[0])
+
+    def test_una_rama_sola_sin_duplicados_es_rc_0(self):
+        rc, salida = _corre(self.repo.path, "--base", "main", "--sin-plan", "--ref", "sana")
+        self.assertEqual(rc, 0, salida)
+        self.assertIn("duplicados internos 0 · ilegibles 0", salida)
+
+    def test_una_rama_sola_ilegible_es_rc_2(self):
+        rc, salida = _corre(self.repo.path, "--base", "main", "--sin-plan", "--ref", "rota")
+        self.assertEqual(rc, 2, salida)
+        self.assertIn("ilegibles 1", salida)
+
+    def test_la_matriz_no_acepta_una_sola_rama(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10", "--ref", "sana"
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("una matriz de 0 pares no es una matriz limpia", salida)
+
+
+class TestFormaDelJson(unittest.TestCase):
+    """El mismo ``schema`` no admite tres sobres distintos ni claves condicionales.
+
+    Medido en la banca externa: un consumidor que leía ``datos["ilegibles"]`` se
+    rompía con KeyError justo cuando no había nada ilegible, y ``ramas`` era una
+    lista de cadenas o de objetos según el modo. Ausencia no es cero.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = RepoDePrueba()
+        cls.repo.rama("limpia", "app.py", "X = 1\n")
+        cls.repo.rama("paga", "nuevo.py", "Y = 2\n")
+        cls.repo.rama("sana", "tests/test_suite.py", _suite_con("    def test_102_m102(self):", ALFA))
+        cls.repo.rama(
+            "rota",
+            "tests/test_suite.py",
+            ("\n".join(_suite_base()) + "\n").replace("import unittest", "import unittest("),
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.repo.cerrar()
+
+    def _json(self, *args):
+        rc, salida = _corre(self.repo.path, "--json", *args)
+        return rc, json.loads(salida)
+
+    def _los_tres_modos(self):
+        plan = self._json("--base", "main", "--holgura-inicial", "10",
+                          "--ref", "limpia", "--ref", "paga")[1]
+        matriz = self._json("--base", "main", "--sin-plan",
+                            "--ref", "limpia", "--ref", "paga")[1]
+        sola = self._json("--base", "main", "--sin-plan", "--ref", "limpia")[1]
+        return plan, matriz, sola
+
+    def test_los_tres_modos_emiten_el_mismo_sobre(self):
+        plan, matriz, sola = self._los_tres_modos()
+        self.assertEqual(set(plan), set(matriz), "plan vs matriz sola")
+        self.assertEqual(set(plan), set(sola), "plan vs rama sola")
+        self.assertEqual({d["schema"] for d in (plan, matriz, sola)},
+                         {"merge-lattice-governor/1"})
+
+    def test_ramas_es_una_lista_de_objetos_en_los_tres_modos(self):
+        for datos in self._los_tres_modos():
+            self.assertTrue(datos["ramas"], datos)
+            for rama in datos["ramas"]:
+                self.assertIsInstance(rama, dict)
+                self.assertIn("ref", rama)
+                self.assertIn("arnes", rama)
+
+    def test_ilegibles_es_lista_siempre_y_nombra_la_ruta(self):
+        plan, matriz, sola = self._los_tres_modos()
+        for datos in (plan, matriz, sola):
+            self.assertEqual(datos["ilegibles"], [], datos["criterio"])
+        _, con_rota = self._json("--base", "main", "--sin-plan",
+                                 "--ref", "sana", "--ref", "rota")
+        self.assertEqual(con_rota["ilegibles"], ["tests/test_suite.py"], con_rota["criterio"])
+
+    def test_sin_masa_las_cifras_son_null_y_nunca_cero(self):
+        plan, matriz, sola = self._los_tres_modos()
+        for datos in (matriz, sola):
+            for rama in datos["ramas"]:
+                for clave in ("arnes", "vivo", "sim", "delta_holgura"):
+                    self.assertIsNone(rama[clave], f"{datos['criterio']}: {clave}")
+        for rama in plan["ramas"]:
+            self.assertIsInstance(rama["arnes"], int)
+
+    def test_la_rama_sola_conserva_su_hallazgo_y_las_otras_modos_no(self):
+        plan, matriz, _ = self._los_tres_modos()
+        _, sola = self._json("--base", "main", "--sin-plan", "--ref", "rota")
+        self.assertIn("sola", sola)
+        self.assertIsNone(plan["sola"])
+        self.assertIsNone(matriz["sola"])
+        self.assertIsNone(sola["plan"])
+        self.assertIsNone(sola["resumen"], "0 pares no es un resumen: es un denominador vacío")
 
 
 if __name__ == "__main__":

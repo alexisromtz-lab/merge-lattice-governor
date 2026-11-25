@@ -1,6 +1,7 @@
 import unittest
+from unittest import mock
 
-from merge_lattice_governor.sombra import colisiones, metodos, nuevos
+from merge_lattice_governor.sombra import colisiones, leer, metodos, nuevos
 
 FUENTE = '''
 import unittest
@@ -49,6 +50,33 @@ class TestExtraccion(unittest.TestCase):
         self.assertEqual(metodos("def roto(:\n"), [])
 
 
+class TestIlegible(unittest.TestCase):
+    def test_un_archivo_que_no_compila_dice_por_que(self):
+        # "cero métodos" y "no se pudo leer" son estados distintos: el primero
+        # es una medición, el segundo no.
+        encontrados, fallo = leer("def roto(:\n", "tests/test_x.py")
+        self.assertEqual(encontrados, [])
+        self.assertEqual(fallo, "tests/test_x.py: no se puede leer como Python (SyntaxError)")
+
+    def test_un_byte_nulo_no_lanza_y_nombra_la_causa(self):
+        # Medido en 3.12.13: el byte nulo sale como SyntaxError, no como
+        # ValueError. Lo que no se admite es el traceback.
+        _, fallo = leer("\x00\n", "f2.py")
+        self.assertIsNotNone(fallo)
+        self.assertTrue(fallo.startswith("f2.py: no se puede leer como Python ("), fallo)
+
+    def test_un_valueerror_del_parser_tambien_es_motivo(self):
+        # Otras versiones del parser sí lanzan ValueError; el guardián lo cubre.
+        with mock.patch("merge_lattice_governor.sombra.ast.parse", side_effect=ValueError("nulo")):
+            _, fallo = leer("x = 1\n", "f2.py")
+        self.assertEqual(fallo, "f2.py: no se puede leer como Python (ValueError)")
+
+    def test_lo_legible_no_declara_fallo(self):
+        encontrados, fallo = leer("class S:\n    def test_1_a(self):\n        pass\n")
+        self.assertIsNone(fallo)
+        self.assertEqual(len(encontrados), 1)
+
+
 class TestColisiones(unittest.TestCase):
     def test_misma_clase_mismo_ordinal_distinto_nombre_es_rojo(self):
         a = metodos("class S:\n    def test_35_alfa(self):\n        pass\n")
@@ -81,6 +109,20 @@ class TestColisiones(unittest.TestCase):
         a = metodos("class A:\n    def test_35_x(self):\n        pass\n")
         b = metodos("class B:\n    def test_35_y(self):\n        pass\n")
         self.assertEqual(colisiones(a, b), [])
+
+    def test_auditar_una_rama_consigo_misma_no_duplica_el_testigo(self):
+        rama = metodos(
+            "class S:\n    def test_06_x(self):\n        pass\n\n"
+            "    def test_06_y(self):\n        pass\n"
+        )
+        # Sin clave no ordenada, el recorrido ve la misma colisión dos veces.
+        self.assertEqual(len(colisiones(rama, rama, incluir_mismo_nombre=True)), 1)
+
+    def test_una_pareja_cruzada_que_coincide_no_se_duplica(self):
+        a = metodos("class S:\n    def test_06_x(self):\n        pass\n")
+        b = metodos("class S:\n    def test_06_y(self):\n        pass\n")
+        self.assertEqual(len(colisiones(a, b)), 1)
+        self.assertEqual(len(colisiones(a + b, a + b, incluir_mismo_nombre=True)), 1)
 
     def test_distinto_ordinal_no_colisiona(self):
         a = metodos("class S:\n    def test_35_x(self):\n        pass\n")

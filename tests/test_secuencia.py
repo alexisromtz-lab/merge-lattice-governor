@@ -140,3 +140,37 @@ class TestGrafoDeConflicto(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPesosDeclarados(unittest.TestCase):
+    """La función objetivo se declara: sin pesos, cuántas caben; con pesos, cuáles."""
+
+    H0 = 100.0
+
+    def _cinco(self):
+        return [
+            Rama("liquidez", Masa(0, 70, 0)),
+            Rama("estrategica", Masa(190, 0, 0)),
+            Rama("barata1", Masa(20, 0, 0)),
+            Rama("barata2", Masa(20, 0, 0)),
+        ]
+
+    def test_sin_pesos_gana_el_conteo(self):
+        plan = planificar(self._cinco(), self.H0)
+        self.assertEqual(plan.orden, ("liquidez", "barata1", "barata2"))
+        self.assertAlmostEqual(plan.holgura_final, 159.386, places=3)
+
+    def test_un_peso_mete_la_estrategica_a_costa_de_volumen(self):
+        plan = planificar(self._cinco(), self.H0, pesos={"estrategica": 10.0})
+        self.assertEqual(plan.orden, ("liquidez", "estrategica"))
+        self.assertEqual(plan.integradas, 2)
+        self.assertAlmostEqual(plan.holgura_final, 9.386, places=3)
+
+    def test_pesos_uniformes_reproducen_el_plan_sin_pesos(self):
+        uniforme = planificar(self._cinco(), self.H0, pesos={r.clave: 1.0 for r in self._cinco()})
+        self.assertEqual(uniforme, planificar(self._cinco(), self.H0))
+
+    def test_un_peso_cero_excluye_sin_romper_la_solvencia(self):
+        plan = planificar(self._cinco(), self.H0, pesos={"barata1": 0.0, "barata2": 0.0})
+        self.assertNotIn("barata1", plan.orden)
+        self.assertTrue(all(h > 0 for h in plan.trayectoria), plan.trayectoria)

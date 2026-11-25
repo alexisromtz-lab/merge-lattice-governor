@@ -63,24 +63,35 @@ def planificar(
     banda: float = BANDA_TECHO,
     maximo_exacto: int = MAXIMO_EXACTO,
     intocables: dict[int, int] | None = None,
+    pesos: dict[str, float] | None = None,
 ) -> Plan:
-    """``intocables[i]`` es la máscara de ramas que no pueden coexistir con ``i``."""
+    """``intocables[i]`` es la máscara de ramas que no pueden coexistir con ``i``.
+
+    ``pesos`` declara la función objetivo: se maximiza el peso integrado y, a
+    igual peso, el número de ramas y la holgura final. Sin ``pesos`` toda rama
+    vale 1, así que el criterio se reduce a «cuántas caben».
+    """
     if not ramas:
         return Plan((), (), (), True, holgura_inicial)
 
     deltas = [r.masa.delta(ratio, banda) for r in ramas]
+    pesos = pesos or {}
+    valor = [pesos.get(r.clave, 1.0) for r in ramas]
     n = len(ramas)
     choques = intocables or {}
 
     if n > maximo_exacto:
-        return _voraz(ramas, deltas, holgura_inicial, choques)
+        return _voraz(ramas, deltas, holgura_inicial, choques, valor)
 
     total = 1 << n
     acumulado = [0.0] * total
+    pesado = [0.0] * total
     for mask in range(1, total):
         bajo = mask & -mask
         i = bajo.bit_length() - 1
-        acumulado[mask] = acumulado[mask ^ bajo] + deltas[i]
+        resto = mask ^ bajo
+        acumulado[mask] = acumulado[resto] + deltas[i]
+        pesado[mask] = pesado[resto] + valor[i]
 
     factible = bytearray(total)
     factible[0] = 1
@@ -98,11 +109,15 @@ def planificar(
                 factible[mask | bit] = 1
 
     mejor = 0
-    clave = (-1, float("-inf"))
+    clave = (-1.0, -1, float("-inf"))
     for mask in range(total):
         if not factible[mask]:
             continue
-        candidata = (bin(mask).count("1"), round(holgura_inicial + acumulado[mask], 6))
+        candidata = (
+            round(pesado[mask], 6),
+            bin(mask).count("1"),
+            round(holgura_inicial + acumulado[mask], 6),
+        )
         if candidata > clave:
             mejor, clave = mask, candidata
 
@@ -110,10 +125,17 @@ def planificar(
     return _ensamblar(ramas, deltas, indices, holgura_inicial, exacto=True)
 
 
-def _voraz(ramas: list[Rama], deltas: list[float], h0: float, choques: dict[int, int] | None = None) -> Plan:
-    """Fuera de la cota exacta: gana el mayor delta entre los que caben."""
+def _voraz(
+    ramas: list[Rama],
+    deltas: list[float],
+    h0: float,
+    choques: dict[int, int] | None = None,
+    valor: list[float] | None = None,
+) -> Plan:
+    """Fuera de la cota exacta: gana el mayor peso entre los que caben, luego el delta."""
     choques = choques or {}
-    pendientes = sorted(range(len(ramas)), key=lambda i: (-deltas[i], ramas[i].clave))
+    valor = valor or [1.0] * len(ramas)
+    pendientes = sorted(range(len(ramas)), key=lambda i: (-valor[i], -deltas[i], ramas[i].clave))
     elegidos: list[int] = []
     bloqueadas = 0
     holgura = h0

@@ -1,3 +1,4 @@
+import pathlib
 import unittest
 
 from merge_lattice_governor.ley import (
@@ -60,6 +61,15 @@ class TestLey(unittest.TestCase):
         for masa in (Masa(0, 1029, 0), Masa(98, 0, 0), Masa(145, 0, 0), Masa(151, 0, 0)):
             holgura += masa.delta()
         self.assertAlmostEqual(holgura, 46.62, places=2)
+
+
+class TestVersion(unittest.TestCase):
+    def test_la_version_tiene_una_sola_fuente(self):
+        # 0.1.1 se publicó con __init__ en 0.1.0 y pyproject en 0.1.1: dos copias divergieron.
+        texto = (pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+        self.assertIn('dynamic = ["version"]', texto)
+        self.assertNotRegex(texto, r'(?m)^version = "')
+        self.assertIn('attr = "merge_lattice_governor.__version__"', texto)
 
 
 if __name__ == "__main__":

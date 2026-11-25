@@ -25,6 +25,10 @@ from dataclasses import dataclass
 
 _ORDINAL = re.compile(r"^test_?(\d+)")
 
+# Una sola copia del marcador: quien lo busca para separar la ruta del motivo no
+# puede quedarse con la redacción vieja cuando cambie el mensaje.
+MARCA_ILEGIBLE = ": no se puede leer como Python ("
+
 
 @dataclass(frozen=True)
 class Metodo:
@@ -50,18 +54,35 @@ def _recorre(cuerpo: list[ast.stmt], prefijo: str, salida: list[Metodo]) -> None
                 salida.append(Metodo(prefijo.rstrip("."), nodo.name, nodo.lineno))
 
 
+def leer(fuente: str, ruta: str = "") -> tuple[list[Metodo], str | None]:
+    """Métodos del archivo **y** el motivo por el que no se pudieron leer.
+
+    Un archivo que no compila no tiene cero métodos: tiene métodos
+    desconocidos. Devolver ``[]`` convierte ese desconocimiento en "limpio" —
+    medido el 25-Nov-2026: dos ramas que tocan el mismo archivo, una con un
+    error de sintaxis lejos del otro cambio, dan ``git merge-tree`` RC 0, la
+    matriz dice ``CONMUTA_LIMPIO`` y el merge real deja un archivo que
+    ``ast.parse`` rechaza. El byte nulo también se cubre: medido en 3.12.13
+    sale como ``SyntaxError``, y en otras versiones del parser como
+    ``ValueError``; quien no captura ninguno de los dos devuelve un traceback,
+    no un veredicto.
+    """
+    try:
+        arbol = ast.parse(fuente)
+    except (SyntaxError, ValueError) as error:
+        return [], f"{ruta}{MARCA_ILEGIBLE}{type(error).__name__})"
+    salida: list[Metodo] = []
+    _recorre(arbol.body, "", salida)
+    return salida, None
+
+
 def metodos(fuente: str) -> list[Metodo]:
     """Métodos de test del archivo, tolerando lo que no compila.
 
     Incluye los que no llevan ordinal: ``def test_algo`` colisiona por nombre.
+    Para distinguir "sin tests" de "ilegible" hay que usar :func:`leer`.
     """
-    try:
-        arbol = ast.parse(fuente)
-    except (SyntaxError, ValueError):
-        return []
-    salida: list[Metodo] = []
-    _recorre(arbol.body, "", salida)
-    return salida
+    return leer(fuente)[0]
 
 
 def nuevos(base: list[Metodo], ref: list[Metodo]) -> list[Metodo]:
@@ -98,11 +119,22 @@ def colisiones(
             por_ordinal.setdefault((metodo.clase, metodo.ordinal), []).append(metodo)
         por_nombre.setdefault((metodo.clase, metodo.nombre), []).append(metodo)
     encontradas: list[tuple[Metodo, Metodo]] = []
-    vistos: set[tuple[int, int]] = set()
+    vistos: set[tuple[tuple[str, int, str], ...]] = set()
 
     def _anota(metodo_a: Metodo, metodo_b: Metodo) -> None:
-        clave = (id(metodo_a), id(metodo_b))
-        if metodo_a is metodo_b or clave in vistos:
+        if metodo_a is metodo_b:
+            return
+        # Clave no ordenada: auditar una rama contra sí misma recorre la misma
+        # colisión en los dos sentidos y sin esto el testigo sale duplicado.
+        clave = tuple(
+            sorted(
+                [
+                    (metodo_a.clase, metodo_a.linea, metodo_a.nombre),
+                    (metodo_b.clase, metodo_b.linea, metodo_b.nombre),
+                ]
+            )
+        )
+        if clave in vistos:
             return
         vistos.add(clave)
         encontradas.append((metodo_a, metodo_b))

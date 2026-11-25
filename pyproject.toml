@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "merge-lattice-governor"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Plan exacto del orden de aterrizaje de ramas git bajo solvencia por prefijo"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,6 +25,9 @@ merge-lattice-governor = "merge_lattice_governor.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/alexisromtz-lab/merge-lattice-governor"
+
+[tool.setuptools.dynamic]
+version = { attr = "merge_lattice_governor.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["merge_lattice_governor*"]
