@@ -261,6 +261,7 @@ def _prescripcion_json(prescripciones) -> list[dict] | None:
             "estado": p.estado,
             "clases_comunes": list(p.clases),
             "riesgos": list(p.riesgos),
+            "merges": p.merges,
         }
         for p in prescripciones
     ]

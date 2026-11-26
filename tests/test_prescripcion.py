@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,8 +67,6 @@ class Sujeto(unittest.TestCase):
         g("commit", "-qam", "al-dia: trabajo propio sobre el tronco ya presente")
 
     def tearDown(self) -> None:
-        import shutil
-
         shutil.rmtree(self.raiz, ignore_errors=True)
 
     def _escribir(self, nombre: str, texto: str) -> None:
@@ -138,27 +137,153 @@ class ElNombreSeQuedaCorto(Sujeto):
         self.assertEqual(self.prescripciones()["toca-viejo"].estado, B.REBASAR_CON_RIESGO)
 
 
+def _replay(ruta: str, tronco: str, ref: str) -> tuple[str, ...]:
+    """Rutas que un `rebase --rebase-merges` deja en conflicto, medido en una copia.
+
+    El oráculo de `rutas_en_conflicto` es un merge a tres bandas y **no ve** este caso:
+    con el `merge-base` como base, la rama no cambió nada respecto a ella. El conflicto
+    sólo aparece al re-ejecutar el merge que la rama guarda, y eso pide un rebase de verdad.
+    """
+    import shutil
+
+    copia = tempfile.mkdtemp(prefix="mlg-replay-")
+    destino = os.path.join(copia, "repo")
+    shutil.copytree(ruta, destino, symlinks=True)
+    try:
+        subprocess.run(
+            ["git", "-C", destino, "-c", "rerere.enabled=false", "rebase", "--rebase-merges",
+             tronco, ref],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "GIT_EDITOR": "true"},
+        )
+        salida = subprocess.run(
+            ["git", "-C", destino, "diff", "--name-only", "--diff-filter=U"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return tuple(sorted(linea for linea in salida.splitlines() if linea.strip()))
+    finally:
+        shutil.rmtree(copia, ignore_errors=True)
+
+
+class SujetoConMergeInterno(unittest.TestCase):
+    """La rama fundió el tronco resolviendo a mano: la resolución vive en el árbol del merge.
+
+    Reproduce en miniatura `psf/requests` `pr/7065` (merge `fe0853c6`, base `6f66281a`):
+    clases disjuntas —la rama toca `a.py`, el tronco `z.py`— y aun así el replay para. La
+    base efectiva de un commit que la rama hizo **antes** de fundir el tronco es anterior
+    al `merge-base`, y el conflicto cae en una ruta que ninguna de las dos listas netas
+    publica como común. `rebase.py` no conserva la resolución: la re-ejecuta y choca.
+    """
+
+    def setUp(self) -> None:
+        self.raiz = tempfile.mkdtemp(prefix="mlg-merge-")
+        g = lambda *a: _git(self.raiz, *a)  # noqa: E731
+        g("init", "-q", "-b", "main")
+        g("config", "user.email", "sonda@ejemplo")
+        g("config", "user.name", "sonda")
+        for nombre in ("a.py", "w.py", "z.py"):
+            self._escribir(nombre, CUERPO)
+        g("add", "-A")
+        g("commit", "-qm", "F base")
+        g("branch", "con-merge")
+        g("branch", "lineal")
+
+        self._escribir("a.py", CUERPO.replace("linea_5 = 5", "linea_5 = 500"))
+        g("commit", "-qam", "tronco: a.py linea 5")
+
+        g("checkout", "-q", "con-merge")
+        self._escribir("a.py", CUERPO.replace("linea_5 = 5", "linea_5 = 55"))
+        g("commit", "-qam", "rama: a.py linea 5")
+        subprocess.run(
+            ["git", "-C", self.raiz, "merge", "main"], capture_output=True, text=True, check=False
+        )
+        self._escribir("a.py", CUERPO.replace("linea_5 = 5", "linea_5 = 5555"))
+        g("add", "-A")
+        g("commit", "-qm", "Merge branch 'main' into con-merge")
+
+        g("checkout", "-q", "lineal")
+        self._escribir("w.py", CUERPO.replace("linea_5 = 5", "linea_5 = 77"))
+        g("commit", "-qam", "rama lineal: w.py linea 5")
+
+        g("checkout", "-q", "main")
+        self._escribir("z.py", CUERPO.replace("linea_30 = 30", "linea_30 = 3030"))
+        g("commit", "-qam", "tronco: z.py linea 30")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.raiz, ignore_errors=True)
+
+    def _escribir(self, nombre: str, texto: str) -> None:
+        with open(os.path.join(self.raiz, nombre), "w", encoding="utf-8") as f:
+            f.write(texto)
+
+    def prescripciones(self) -> dict[str, B.Prescripcion]:
+        return {p.ref: p for p in B.prescribir(self.raiz, "main", ["con-merge", "lineal"])}
+
+    def test_las_clases_netas_estan_disjuntas(self) -> None:
+        """Si no lo estuvieran, el caso no probaría nada: `CON_RIESGO` ya lo habría cazado."""
+        base = _git(self.raiz, "merge-base", "main", "con-merge").strip()
+        de_rama = set(_git(self.raiz, "diff", "--name-only", f"{base}..con-merge").split())
+        de_tronco = set(_git(self.raiz, "diff", "--name-only", f"{base}..main").split())
+        self.assertEqual(de_rama, {"a.py"})
+        self.assertEqual(de_tronco, {"z.py"})
+
+    def test_el_merge_interno_quita_la_prueba(self) -> None:
+        p = self.prescripciones()["con-merge"]
+        self.assertEqual(p.estado, B.REBASAR_CON_MERGE_INTERNO)
+        self.assertEqual(p.merges, 1)
+        self.assertEqual(p.clases, (), "ninguna clase común: no se prueba nada")
+        self.assertEqual(p.riesgos, ("a.py",), "lo que la rama toca, para el operador")
+        self.assertFalse(p.libre)
+
+    def test_el_replay_choca_y_lo_hace_en_el_merge(self) -> None:
+        self.assertEqual(_replay(self.raiz, "main", "con-merge"), ("a.py",))
+
+    def test_sin_merge_la_misma_estructura_sigue_siendo_libre(self) -> None:
+        """Control negativo: lo que quita la prueba es el merge, no estar atrás."""
+        p = self.prescripciones()["lineal"]
+        self.assertEqual(p.estado, B.REBASAR_LIBRE)
+        self.assertEqual(p.merges, 0)
+        self.assertEqual(_replay(self.raiz, "main", "lineal"), ())
+
+
 class ResumenYTexto(unittest.TestCase):
-    def test_el_resumen_cuenta_las_cuatro_clases(self) -> None:
+    def test_el_resumen_cuenta_las_cinco_clases(self) -> None:
         casos = [
             B.Prescripcion("a", 0, B.AL_DIA),
             B.Prescripcion("b", 3, B.REBASAR_LIBRE),
             B.Prescripcion("c", 9, B.REBASAR_CON_RIESGO, ("x.py",), ("x.py",)),
             B.Prescripcion("d", 40, B.SIN_TRABAJO),
+            B.Prescripcion("e", 7, B.REBASAR_CON_MERGE_INTERNO, (), ("y.py",), 1),
         ]
         self.assertEqual(
             B.resumen(casos),
-            {B.AL_DIA: 1, B.REBASAR_LIBRE: 1, B.REBASAR_CON_RIESGO: 1, B.SIN_TRABAJO: 1},
+            {
+                B.AL_DIA: 1,
+                B.REBASAR_LIBRE: 1,
+                B.REBASAR_CON_RIESGO: 1,
+                B.SIN_TRABAJO: 1,
+                B.REBASAR_CON_MERGE_INTERNO: 1,
+            },
         )
         texto = "\n".join(B.texto(casos))
         self.assertIn("rebase sin riesgo textual medible", texto)
         self.assertIn("x.py", texto)
+        self.assertIn("y.py", texto)
         self.assertIn("no piden aterrizaje ni rebase", texto)
+        self.assertIn("1 merge(s) interno(s)", texto)
+        self.assertIn("y.py", texto)
 
     def test_sin_ramas_fundidas_no_hay_linea_de_sobra(self) -> None:
         casos = [B.Prescripcion("b", 3, B.REBASAR_LIBRE)]
         self.assertEqual(B.resumen(casos)[B.SIN_TRABAJO], 0)
-        self.assertNotIn("no piden aterrizaje", "\n".join(B.texto(casos)))
+        self.assertEqual(B.resumen(casos)[B.REBASAR_CON_MERGE_INTERNO], 0)
+        texto = "\n".join(B.texto(casos))
+        self.assertNotIn("no piden aterrizaje", texto)
+        self.assertNotIn("merge(s) interno(s)", texto)
 
     def test_sin_ramas_no_hay_seccion(self) -> None:
         self.assertEqual(B.texto([]), [])
@@ -198,8 +323,6 @@ class LaCopiaNoSePagaPorDefecto(unittest.TestCase):
         g("commit", "-qm", "tronco: avanza por otro lado")
 
     def tearDown(self) -> None:
-        import shutil
-
         shutil.rmtree(self.raiz, ignore_errors=True)
 
     def _prescribir(self, **kw) -> B.Prescripcion:
@@ -281,8 +404,6 @@ class LasDistanciasSonUnaSolaLlamada(unittest.TestCase):
             g("commit", "-qm", f"tronco {i}")
 
     def tearDown(self) -> None:
-        import shutil
-
         shutil.rmtree(self.raiz, ignore_errors=True)
 
     def test_coincide_con_las_dos_llamadas_de_referencia(self) -> None:
@@ -319,8 +440,6 @@ class LaCLILoPublica(unittest.TestCase):
         _git(self.raiz, "checkout", "-q", "-b", "fresca", "main")
 
     def tearDown(self) -> None:
-        import shutil
-
         shutil.rmtree(self.raiz, ignore_errors=True)
 
     def _corre(self, *args: str) -> subprocess.CompletedProcess:

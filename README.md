@@ -12,7 +12,7 @@ tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en u
 pelado —138 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.7.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.8.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -21,8 +21,8 @@ Sin PyPI todavía, pero **sin clonar**: el wheel viaja como artefacto inmutable 
 así que un CI lo instala en una línea y sin compilar.
 
 ```console
-$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.7.0/merge_lattice_governor-0.7.0-py3-none-any.whl merge-lattice-governor --version
-$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.7.0/merge_lattice_governor-0.7.0-py3-none-any.whl
+$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.8.0/merge_lattice_governor-0.8.0-py3-none-any.whl merge-lattice-governor --version
+$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.8.0/merge_lattice_governor-0.8.0-py3-none-any.whl
 ```
 
 `uvx` exige el nombre PEP 427 completo (`nombre-versión-py3-none-any.whl`): un nombre
@@ -33,7 +33,7 @@ abreviado se rechaza antes de instalar.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.7.0
+    rev: v0.8.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.7.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.8.0
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -73,23 +73,23 @@ Con `lotes: "true"` la acción no pide cubeta y publica las **corridas de CI sin
 posible** —el ahorro de minutos es el producto—:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.7.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.8.0
         with:
           lotes: "true"
           refs: "origin/pr-402 origin/pr-401 origin/pr-403 origin/pr-405"
           salida-json: artefactos/lotes.json
 ```
 
-Se recomienda fijar la etiqueta exacta (`@v0.7.0`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.8.0`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
 Con `argumentos: "--prescribir"` la acción no ordena nada: publica **el acto que pide cada
-rama** (`AL_DIA` · `REBASAR_LIBRE` · `REBASAR_CON_RIESGO` · `SIN_TRABAJO`), que es lo que se
+rama** (`AL_DIA` · `REBASAR_LIBRE` · `REBASAR_CON_MERGE_INTERNO` · `REBASAR_CON_RIESGO` · `SIN_TRABAJO`), que es lo que se
 consulta antes de decidir si el plan es siquiera el problema:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.7.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.8.0
         with:
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
           argumentos: "--prescribir"
@@ -214,7 +214,8 @@ leer un solo blob —dos `git diff` y un `rev-list` por rama—:
 |---|---|
 | `SIN_TRABAJO` | **0 commits propios**: la rama ya está en el tronco, no pide aterrizaje ni rebase |
 | `AL_DIA` | la rama contiene el tronco y tiene trabajo propio: no pide acto |
-| `REBASAR_LIBRE` | **0 clases de identidad** tocadas por los dos lados: rebase sin conflicto textual |
+| `REBASAR_LIBRE` | **0 clases de identidad** tocadas por los dos lados **e historia lineal**: rebase sin conflicto textual |
+| `REBASAR_CON_MERGE_INTERNO` | clases disjuntas pero **la rama guarda un merge**: el replay lo re-ejecuta y la resolución no se reproduce. No se prueba nada: `clases_comunes` sale vacía y `riesgos` publica lo que la rama toca |
 | `REBASAR_CON_RIESGO` | las clases comunes, para que el operador sepa qué archivos verá |
 
 Y la ley que lo sostiene, medida el 27-Nov-2026:
@@ -229,6 +230,19 @@ Y la ley que lo sostiene, medida el 27-Nov-2026:
 Es **cota superior, no igualdad**: `orquestador-video-20261110` predijo 20 archivos y chocó
 en 4; `espejo-publicaciones-20261111` predijo 2 y chocó en 0. Sirve para descartar gratis
 —un `REBASAR_LIBRE` está probado sin merge-tree—, no para prometer.
+
+**Corrección v0.8.0 — el descarte pedía una condición más.** Disjuntas las clases, la prueba
+se apoyaba en que «no hay commit que reproducir ⇒ no hay ruta que ver». Falso para una rama
+con un merge dentro: la base efectiva del replay es **anterior** al `merge-base` y el
+conflicto puede caer en una ruta que ninguna de las dos listas netas publica como común.
+Medido el 26-Nov-2026 sobre tres sujetos (210 ramas con trabajo, rebase real): de **23
+`REBASAR_LIBRE`, las 22 con historia lineal rebasaron limpias y la única con merge interno
+—`psf/requests` `pr/7065`, merge `fe0853c6`— paró en 3 conflictos**. Su merge es *malvado*:
+`git merge-tree` de sus propios padres choca en los mismos 3 archivos. Por eso `REBASAR_LIBRE`
+exige ahora `git rev-list --merges --count base..ref == 0`, y esa rama se publica como
+`REBASAR_CON_MERGE_INTERNO`. Cuesta **una llamada más, sólo en la rama que iba a ser libre**.
+El kit que recalcula estas cifras —sondas, TSV de cobertura y las 23 ramas con su veredicto—
+está en [`evidencia/2026-11-26/`](evidencia/2026-11-26/README.md), sin red y sin ZIP.
 
 **Contra el acto real**, no contra un oráculo: 28 ramas del corpus rebasadas de verdad
 (`git rebase origin/main` con HEAD en la rama) el 27-Nov-2026. **14 `REBASAR_LIBRE` ⇒ 14
@@ -253,12 +267,16 @@ $ merge-lattice-governor --base origin/main --prescribir
 PRESCRIPCIÓN · el acto que pide cada rama (clases de rename, lectura pura)
   AL_DIA 7 · REBASAR_LIBRE 2 · REBASAR_CON_RIESGO 53
   SIN_TRABAJO 213: sus commits ya están en el tronco, no piden aterrizaje ni rebase
+  REBASAR_CON_MERGE_INTERNO 1: la rama guarda un merge que el replay re-ejecuta,
+  así que no se prueba nada
   · <ref>  atrás <n>  rebase sin riesgo textual medible
+  · <ref>  atrás <n>  rebase con <m> merge(s) interno(s): <k> archivo(s) propio(s) en juego
+      <ruta que la rama toca>
   · <ref>  atrás <n>  rebase con <k> archivo(s) en juego
       <ruta que puede chocar>
       … N más
-  cota superior: 0 clases comunes ⇒ rebase sin conflicto textual; con clases,
-  la lista es lo que puede chocar, no lo que chocará
+  cota superior: 0 clases comunes e historia lineal ⇒ rebase sin conflicto textual;
+  con clases, la lista es lo que puede chocar, no lo que chocará
 ```
 
 El agregado y la línea `SIN_TRABAJO` son los medidos sobre la cola del 28-Nov-2026; las filas
@@ -597,7 +615,7 @@ necesita saber en cuál está para leerlo:
 | `soportes` | objeto | sólo en `--lotes`: `ref → archivos` del delta, `[]` es medida |
 | `cota_inferior` | entero | sólo en `--lotes`: `ω(G) ≥ max_archivo |{ramas}|`, exacta y gratis |
 | `minimo_probado` | booleano | sólo en `--lotes`: `true` = la voraz alcanzó la cota, el número de lotes es mínimo |
-| `prescripcion` | lista u `null` | el acto por rama `{ref, atras, estado, clases_comunes[], riesgos[]}`; `null` = no pedido con `--prescribir`, `[]` no ocurre (siempre hay al menos una rama) |
+| `prescripcion` | lista u `null` | el acto por rama `{ref, atras, estado, clases_comunes[], riesgos[], merges}`; en `REBASAR_CON_MERGE_INTERNO` las clases comunes son `[]` y `riesgos` publica lo que la rama toca, porque no hay prueba que dar; `null` = no pedido con `--prescribir`, `[]` no ocurre (siempre hay al menos una rama) |
 | `duplicados` | objeto | `duplicados_identicos` (pares de `def`) y `parejas_con_duplicados_identicos` (pares de ramas): dos unidades, dos claves |
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
 | `resumen` | objeto o `null` | `null` en rama sola: 0 pares no es un resumen |
@@ -615,7 +633,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.7.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.8.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
