@@ -31,3 +31,22 @@ version = { attr = "merge_lattice_governor.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["merge_lattice_governor*"]
+
+# Frontera arquitectónica del sujeto, leída por `platino-scan` (>= 1.4.0) desde
+# el propio árbol: un clon frío certifica la arquitectura sin banderas de CLI.
+#
+# `tests/` no se excluye, se particiona: la regla de barrel deja de aplicarse a
+# la suite (que concentra el 55.6 % del grafo porque una suite densa importa a
+# propósito) y el detector de ciclos sigue midiendo dentro de `tests/` y a través
+# de la frontera. El universo medido se publica en cada corrida.
+[tool.platino-scan]
+pruebas = ["tests"]
+# Las tres puertas lo son por contrato, no por conveniencia: `cli.py` es el
+# target del console_script de arriba, `__main__.py` el de `python -m`, y
+# `__init__.py` la superficie de importación pública. Que las dos primeras
+# concentren el 100 % y el 88.9 % del subgrafo de producto es su definición.
+puertas = [
+  "merge_lattice_governor/cli.py",
+  "merge_lattice_governor/__main__.py",
+  "merge_lattice_governor/__init__.py",
+]
