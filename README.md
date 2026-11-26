@@ -9,10 +9,10 @@ siendo solvente.
 
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
 tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
-pelado —131 pruebas, medido en un Python 3.12 sin PyYAML—.
+pelado —134 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.2
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -25,7 +25,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.6.0
+    rev: v0.6.2
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.2
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -65,16 +65,28 @@ Con `lotes: "true"` la acción no pide cubeta y publica las **corridas de CI sin
 posible** —el ahorro de minutos es el producto—:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.2
         with:
           lotes: "true"
           refs: "origin/pr-402 origin/pr-401 origin/pr-403 origin/pr-405"
           salida-json: artefactos/lotes.json
 ```
 
-Se recomienda fijar la etiqueta exacta (`@v0.6.0`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.6.2`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
+
+Con `argumentos: "--prescribir"` la acción no ordena nada: publica **el acto que pide cada
+rama** (`AL_DIA` · `REBASAR_LIBRE` · `REBASAR_CON_RIESGO` · `SIN_TRABAJO`), que es lo que se
+consulta antes de decidir si el plan es siquiera el problema:
+
+```yaml
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.2
+        with:
+          refs: "origin/pr-402 origin/pr-401 origin/pr-403"
+          argumentos: "--prescribir"
+          salida-json: artefactos/prescripcion.json
+```
 
 ---
 
@@ -549,7 +561,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.2
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```

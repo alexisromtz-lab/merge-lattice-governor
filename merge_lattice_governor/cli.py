@@ -518,6 +518,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.self_test:
         return _self_test()
 
+    if args.prescribir and args.holgura_inicial is None and not args.lotes:
+        # La prescripción contesta «qué acto pide cada rama», no «en qué orden aterrizan»: sin
+        # cubeta no hay plan posible, así que pedirle una es pedir un dato que su salida no usa.
+        # El modo pasa a auditoría, y con él se omite la matriz —que son N² merges de lectura—.
+        args.sin_plan = True
+        args.sin_parejas = True
+
     if not args.ref:
         print("RC 2 · falta --ref: sin población no hay denominador", file=sys.stderr)
         return RC_ENTRADA

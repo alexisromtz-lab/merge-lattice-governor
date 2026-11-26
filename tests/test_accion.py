@@ -125,6 +125,12 @@ class Repo(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
         self.assertIn("falta el input holgura-inicial", proc.stderr)
 
+    def test_prescribir_en_argumentos_tambien_exime_de_la_cubeta(self) -> None:
+        proc = self.corre(INPUT_HOLGURA="", INPUT_ARGUMENTOS="--prescribir")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("falta el input holgura-inicial", proc.stderr)
+        self.assertIn("PRESCRIPCIÓN", proc.stdout)
+
 
 class DeclaracionDeLaAccion(unittest.TestCase):
     """`action.yml` y el cuerpo no pueden declarar contratos distintos.

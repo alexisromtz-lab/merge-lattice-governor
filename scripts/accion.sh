@@ -21,7 +21,7 @@ lotes="${INPUT_LOTES:-}"
 sin_cubeta=0
 if [ "$lotes" = "true" ]; then sin_cubeta=1; fi
 case " $extra " in
-  *" --lotes "*|*" --sin-plan "*) sin_cubeta=1;;
+  *" --lotes "*|*" --sin-plan "*|*" --prescribir "*) sin_cubeta=1;;
 esac
 if [ -z "$holgura" ] && [ "$sin_cubeta" -eq 0 ]; then
   echo "merge-lattice-governor: falta el input holgura-inicial" >&2

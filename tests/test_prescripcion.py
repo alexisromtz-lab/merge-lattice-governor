@@ -211,6 +211,17 @@ class LaCLILoPublica(unittest.TestCase):
         self.assertIn("PRESCRIPCIÓN", out)
         self.assertIn("rebase con 1 archivo(s) en juego", out)
 
+    def test_prescribir_sin_cubeta_no_exige_cubeta(self) -> None:
+        proc = self._corre("--base", "main", "--ref", "otra", "--ref", "fresca", "--prescribir")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("holgura-inicial", proc.stderr)
+        self.assertIn("PRESCRIPCIÓN", proc.stdout)
+
+    def test_sin_prescripcion_la_cubeta_sigue_siendo_obligatoria(self) -> None:
+        proc = self._corre("--base", "main", "--ref", "otra", "--ref", "fresca")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("--holgura-inicial", proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
