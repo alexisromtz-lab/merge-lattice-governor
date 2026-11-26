@@ -7,7 +7,8 @@ rama atrasada como parte, y rebasar es el único acto que los toca.
 Este módulo publica el acto **antes** de ejecutarlo, sin leer un solo blob:
 
     SIN_TRABAJO        la rama no tiene commits propios: ya está en el tronco, no pide aterrizaje.
-    REBASAR_LIBRE      ninguna clase de identidad tocada por los dos lados.
+    REBASAR_LIBRE      historia lineal y ninguna clase de identidad tocada por los dos lados.
+    REBASAR_CON_MERGE_INTERNO  la rama guarda un merge: no se prueba nada, sólo se declara qué toca.
     REBASAR_CON_RIESGO las clases comunes, para que el operador sepa qué archivos verá.
     AL_DIA             la rama ya contiene el tronco.
 
@@ -41,6 +42,20 @@ clase** (una `BITACORA/bloque-*.md` nueva). Instrumento: sin `--rebase-merges`, 
 Límite declarado: es cota **superior**, no igualdad. `orquestador-video` predijo 20 clases
 y produjo 4 conflictos; `espejo-publicaciones` predijo 2 y produjo 0. Sirve para descartar
 gratis (`REBASAR_LIBRE`), no para prometer.
+
+**El merge interno rompe el descarte, no la cota.** Con historia lineal, cada commit que el
+replay reaplica tiene por base el `merge-base` de la pareja: si su ruta no está en las dos
+listas netas, el cherry-pick es un no-op sobre esa ruta y no puede chocar. Con un merge
+dentro de `base..ref` la base efectiva del replay es **anterior** al `merge-base`, y el
+conflicto puede caer en una ruta que ninguna de las dos listas netas publica —porque la
+resolución vivía en el árbol del merge, y un merge no se reaplica: se re-ejecuta—.
+Medido el 26-Nov-2026 sobre tres sujetos (210 ramas con trabajo, rebase real): 23 ramas
+`REBASAR_LIBRE`, **22 lineales y 22 limpias** (9 `~/primer`, 10 `psf/requests`, 4 el corpus);
+la única con un merge interno (`psf/requests` `pr/7065`, merge `fe0853c6`, base
+`6f66281a`) declaró LIBRE y paró en 3 conflictos. Su merge es **malvado**: los mismos
+3 archivos chocan al fundir sus dos padres (`git merge-tree 5547eef 6f66281a`), y el
+replay los reproduce porque no conserva la resolución. Por eso `REBASAR_LIBRE` exige ahora
+historia lineal, y una rama con merge interno se publica como lo que es: no probada.
 """
 
 from __future__ import annotations
@@ -52,6 +67,7 @@ from . import repo as R
 AL_DIA = "AL_DIA"
 SIN_TRABAJO = "SIN_TRABAJO"
 REBASAR_LIBRE = "REBASAR_LIBRE"
+REBASAR_CON_MERGE_INTERNO = "REBASAR_CON_MERGE_INTERNO"
 REBASAR_CON_RIESGO = "REBASAR_CON_RIESGO"
 
 
@@ -62,6 +78,7 @@ class Prescripcion:
     estado: str
     clases: tuple[str, ...] = ()
     riesgos: tuple[str, ...] = ()
+    merges: int = 0
 
     @property
     def libre(self) -> bool:
@@ -131,6 +148,23 @@ def _tocados(
     return tocadas
 
 
+def _merges_internos(repo: str, base: str, ref: str) -> int:
+    """Commits de merge en ``base..ref``: una llamada, y sólo en la rama que iba a ser libre.
+
+    Es el único dato que separa «no hay ruta que chocar» de «no hay replay que reproducir».
+    Se paga **después** de que las clases salgan disjuntas: en el corpus del 26-Nov-2026
+    son 4 de 114 ramas, no 114.
+    """
+    salida = R.exigir(
+        R.git(repo, "rev-list", "--merges", "--count", f"{base}..{ref}"),
+        f"rev-list --merges --count {base}..{ref}",
+    ).strip()
+    try:
+        return int(salida)
+    except ValueError as exc:
+        raise R.ErrorGit(f"rev-list --merges {base}..{ref}: {salida!r} no es una cuenta") from exc
+
+
 def prescribir(
     repo: str, tronco: str, refs: list[str], *, copias: bool = False
 ) -> list[Prescripcion]:
@@ -152,6 +186,22 @@ def prescribir(
         de_tronco = _tocados(repo, base, tronco, clases, copias=copias)
         comunes = {clases.raiz(p) for p in de_rama} & {clases.raiz(p) for p in de_tronco}
         if not comunes:
+            # Disjuntas las clases, falta la otra mitad de la prueba: sin merge interno el
+            # replay usa `base` como base de cada cherry-pick y una ruta que no está en
+            # ninguna de las dos listas netas no puede chocar. Con merge, la base efectiva
+            # es anterior y la resolución del merge no se reproduce.
+            merges = _merges_internos(repo, base, ref)
+            if merges:
+                salida.append(
+                    Prescripcion(
+                        ref=ref,
+                        atras=atras,
+                        estado=REBASAR_CON_MERGE_INTERNO,
+                        riesgos=tuple(sorted(de_rama)),
+                        merges=merges,
+                    )
+                )
+                continue
             salida.append(Prescripcion(ref=ref, atras=atras, estado=REBASAR_LIBRE))
             continue
         nombres: dict[str, set[str]] = {}
@@ -172,7 +222,13 @@ def prescribir(
 
 
 def resumen(prescripciones: list[Prescripcion]) -> dict[str, int]:
-    cuenta = {AL_DIA: 0, SIN_TRABAJO: 0, REBASAR_LIBRE: 0, REBASAR_CON_RIESGO: 0}
+    cuenta = {
+        AL_DIA: 0,
+        SIN_TRABAJO: 0,
+        REBASAR_LIBRE: 0,
+        REBASAR_CON_MERGE_INTERNO: 0,
+        REBASAR_CON_RIESGO: 0,
+    }
     for p in prescripciones:
         cuenta[p.estado] = cuenta.get(p.estado, 0) + 1
     return cuenta
@@ -192,11 +248,26 @@ def texto(prescripciones: list[Prescripcion]) -> list[str]:
             f"  {SIN_TRABAJO} {cuenta[SIN_TRABAJO]}: sus commits ya están en el tronco, "
             "no piden aterrizaje ni rebase"
         )
+    if cuenta[REBASAR_CON_MERGE_INTERNO]:
+        lineas.append(
+            f"  {REBASAR_CON_MERGE_INTERNO} {cuenta[REBASAR_CON_MERGE_INTERNO]}: la rama "
+            "guarda un merge que el replay re-ejecuta, así que no se prueba nada"
+        )
     for p in prescripciones:
         if p.estado in (AL_DIA, SIN_TRABAJO):
             continue
         if p.estado == REBASAR_LIBRE:
             lineas.append(f"  · {p.ref}  atrás {p.atras}  rebase sin riesgo textual medible")
+            continue
+        if p.estado == REBASAR_CON_MERGE_INTERNO:
+            lineas.append(
+                f"  · {p.ref}  atrás {p.atras}  rebase con {p.merges} merge(s) interno(s): "
+                f"{len(p.riesgos)} archivo(s) propio(s) en juego"
+            )
+            for ruta in p.riesgos[:8]:
+                lineas.append(f"      {ruta}")
+            if len(p.riesgos) > 8:
+                lineas.append(f"      … {len(p.riesgos) - 8} más")
             continue
         lineas.append(
             f"  · {p.ref}  atrás {p.atras}  rebase con {len(p.clases)} archivo(s) en juego"
@@ -206,7 +277,7 @@ def texto(prescripciones: list[Prescripcion]) -> list[str]:
         if len(p.clases) > 8:
             lineas.append(f"      … {len(p.clases) - 8} más")
     lineas.append(
-        "  cota superior: 0 clases comunes ⇒ rebase sin conflicto textual; con clases, "
-        "la lista es lo que puede chocar, no lo que chocará"
+        "  cota superior: 0 clases comunes e historia lineal ⇒ rebase sin conflicto textual; "
+        "con clases, la lista es lo que puede chocar, no lo que chocará"
     )
     return lineas

@@ -1,7 +1,7 @@
 # Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs
 
 **Technical note · 2026-11-26 · version 1.1 · DOI [10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464)**
-Companion to `merge-lattice-governor` v0.7.0 (`0e4c38a`), `composicion-core`,
+Companion to `merge-lattice-governor` v0.8.0 (`0e4c38a` + `6.1`), `composicion-core`,
 `py-test-shadow-guard`. All numbers were produced by the commands in §7 on a disposable clone;
 no figure in this note is an estimate.
 
@@ -133,6 +133,43 @@ a *net diff* cannot see either:
 This is the sharpest frame error in the note: the bound and the act were never measuring the same
 object. It also explains why `REBASAR_LIBRE` remains a proof — no commit to replay means no path to
 see — while a `REBASAR_CON_RIESGO` list is what *may* collide, never what will.
+
+### 6.1 Correction (v0.8.0): that last sentence was one condition short
+
+The sentence above was a *testable* claim, so we tested it on two subjects this repository does not
+own. Population and protocol: every branch with work to land (`rev-list --count T..B > 0`) in
+`~/primer` (56), the 40 most recently updated open PRs of `psf/requests` (40) and the corpus itself
+(114) — **210 branches**, each rebased for real (`git rebase --rebase-merges`, first stop, throwaway
+`--shared` clones, `rerere` disabled), verdicts frozen before the act.
+
+| prescribed | n | clean | conflict |
+|---|---|---|---|
+| `REBASAR_LIBRE` with `rev-list --merges --count base..ref == 0` | 22 | **22** | 0 |
+| `REBASAR_LIBRE` with an internal merge | 1 | 0 | **1** |
+
+The counterexample is `psf/requests` `pr/7065`: `REBASAR_LIBRE`, and the replay stops with three
+conflicts (`src/requests/adapters.py`, `src/requests/models.py`, `tests/test_adapters.py`). The
+branch is 20 commits behind, touches those three paths, and the trunk's net change since the
+`merge-base` is ten `.github/*`/config files — the classes are genuinely disjoint. The stop is
+reported on the **merge commit**, `Could not apply fe0853c6… Merge branch 'main' into edit-14`, and
+that merge is *evil*: `git merge-tree 5547eef 6f66281a` — its own two parents — conflicts on the
+same three paths. The resolution lived in the merge's tree, and a merge is not re-applied, it is
+re-executed.
+
+So the correct statement is narrower:
+
+> With a linear branch, every commit the replay applies has `base` as its own base, so a path in
+> neither net diff cannot collide. With a merge inside `base..ref` the effective base of the
+> replayed commits is **older** than the `merge-base`, and the conflict can land on a path neither
+> net list publishes as common. `REBASAR_LIBRE` therefore requires *linear history*, not just
+> disjoint classes.
+
+v0.8.0 adds `REBASAR_CON_MERGE_INTERNO`: same disjoint classes, plus the count of internal merges and
+the branch's own paths, no proof claimed. Cost of the guard: one `rev-list --merges --count`, paid
+only by branches that were about to be called free — 4 of 114 in the corpus. Coverage does not move:
+**235 conflict paths across the three subjects, 233 inside the path-level bound, 234 inside a class**
+(the two misses are a trunk rename that the class sees, and a `BITACORA/bloque-*.md` created on both
+sides with different names, which no rename class can join).
 
 The displacement itself was paid down too: two `git rev-list --count` calls became one
 `--left-right --count`, **57 ms against 228 ms**, identical field by field.
