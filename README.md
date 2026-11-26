@@ -233,9 +233,16 @@ $ merge-lattice-governor --base origin/main --prescribir
 PRESCRIPCIÓN · el acto que pide cada rama (clases de rename, lectura pura)
   AL_DIA 7 · REBASAR_LIBRE 2 · REBASAR_CON_RIESGO 53
   SIN_TRABAJO 213: sus commits ya están en el tronco, no piden aterrizaje ni rebase
-  · origen/rama-a  atrás 41  rebase con 1 archivo(s) en juego
-      tools/indice_platino.py
+  · <ref>  atrás <n>  rebase sin riesgo textual medible
+  · <ref>  atrás <n>  rebase con <k> archivo(s) en juego
+      <ruta que puede chocar>
+      … N más
+  cota superior: 0 clases comunes ⇒ rebase sin conflicto textual; con clases,
+  la lista es lo que puede chocar, no lo que chocará
 ```
+
+El agregado y la línea `SIN_TRABAJO` son los medidos sobre la cola del 28-Nov-2026; las filas
+por rama van con marcadores porque son 62.
 
 ### Censo de la cola: la población se declara antes que el porcentaje
 
