@@ -205,6 +205,12 @@ def _texto(repo: str, base: str, ramas: list[Rama], matriz: list[P.Pareja], plan
             f"{dup['parejas_con_duplicados_identicos']} pareja(s) · mismo nombre y mismo "
             f"cuerpo, ningún test se pierde · 0 aquí significa mirado, no ausente"
         )
+        idem = P.idempotentes(matriz)
+        lineas.append(
+            f"  IDEMPOTENTES {idem['rutas_idempotentes']} ruta(s) en "
+            f"{idem['parejas_idempotentes']} pareja(s) · misma firma (modo, blob) en las "
+            f"dos ramas · el merge es x ⊔ x = x, no hay merge que correr"
+        )
         for p in P.incompatibles(matriz):
             lineas.append(f"  · {p.a} × {p.b}  {p.describe()}")
         lineas.append("")
@@ -306,7 +312,7 @@ def _parejas_json(matriz: Sequence[P.Pareja]) -> list[dict]:
          "textual": list(p.textual), "simbolica": list(p.simbolica),
          "identicos": list(p.identicos), "ilegibles": list(p.ilegibles),
          "driver": list(p.driver), "decision": p.decision,
-         "prefijo": list(p.prefijo),
+         "prefijo": list(p.prefijo), "idempotentes": list(p.idempotentes),
          "atribucion": p.atribucion}
         for p in matriz
     ]
@@ -319,8 +325,8 @@ def _complementos(matriz: Sequence[P.Pareja]) -> list[str]:
     lineas: list[str] = []
     dec = P.decisiones(matriz)
     lineas.append(
-        f"  DECISIÓN · {P.TEOREMA} {dec[P.TEOREMA]} (soporte disjunto, sin merge) · "
-        f"{P.MEDIDO} {dec[P.MEDIDO]} (merge a tres bandas)"
+        f"  DECISIÓN · {P.TEOREMA} {dec[P.TEOREMA]} (soporte disjunto o firma idéntica, "
+        f"sin merge) · {P.MEDIDO} {dec[P.MEDIDO]} (merge a tres bandas)"
     )
     atr = P.atribucion(matriz)
     if atr[P.ATRIBUCION_TRONCO] or atr[P.ATRIBUCION_PAR]:
@@ -377,6 +383,7 @@ def _carga_json(repo, base, ramas, matriz, plan, h0, ratio, banda, criterio,
         "decisiones": P.decisiones(matriz),
         "atribucion": P.atribucion(matriz),
         "duplicados": P.duplicados(matriz),
+        "idempotentes": P.idempotentes(matriz),
         "sola": None,
         "plan": {
             "exacto": plan.exacto,
@@ -627,6 +634,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "duplicados_identicos": 0,
                         "parejas_con_duplicados_identicos": 0,
                     },
+                    "idempotentes": {
+                        "rutas_idempotentes": 0,
+                        "parejas_idempotentes": 0,
+                    },
                     "sola": {"ref": args.ref[0], "hallazgos": list(hallazgos)},
                     "plan": None,
                 },
@@ -661,6 +672,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "decisiones": P.decisiones(matriz),
                     "atribucion": P.atribucion(matriz),
                     "duplicados": P.duplicados(matriz),
+                    "idempotentes": P.idempotentes(matriz),
                     "sola": None,
                     "plan": None,
                 },

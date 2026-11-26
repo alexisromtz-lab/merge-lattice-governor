@@ -200,6 +200,31 @@ gobierna `--lotes`: una arista entre `d` y `d/x` dentro de un lote prometido ser
 que no compila. Coste medido en la cola real: `0` parejas con choque de prefijo sobre las
 190 de la muestra, matriz idéntica.
 
+### La segunda poda: misma firma `(modo, blob)`
+
+Soporte común tampoco implica conflicto cuando las dos ramas piden **el mismo estado**: si en
+cada ruta común quedan los mismos bytes y el mismo modo, el merge es `x ⊔ x = x` y no hay
+nada que correr. La firma es el par `(modo, blob)`, no el blob: dos ramas que dejan los mismos
+bytes pero una lo marca ejecutable (`100755` frente a `100644`, o un symlink `120000`) chocan
+con `CONFLICT (add/add)`. Medido el 26-Nov-2026 en repositorio sintético: mismo blob y mismo
+modo ⇒ merge limpio en las dos órdenes, con una sola copia del archivo; mismo blob y modo
+distinto ⇒ RC 1 en las dos órdenes.
+
+Desde 0.10.0 el atajo aplica también cuando todas las rutas comunes tienen la misma firma, y
+el veredicto publica `idempotentes[]`. El diferencial `--sin-optimizar` sigue siendo la
+prueba: para la pareja idempotente devuelve `MEDIDO`, la misma `clase` y `textual` vacío.
+
+Masa medida en la cola real (las 20 ramas más recientes de `platino-labs`, 190 parejas,
+26-Nov-2026): `IDEMPOTENTES 28 ruta(s) en 4 pareja(s)`, `prefijo` vacío en 190/190. La poda
+**no movió un solo veredicto** en esa cola —las cuatro parejas chocan en otras rutas— y no
+tiene por qué moverlo: lo que quita son 28 rutas que ya no hay que reconciliar a mano, porque
+su merge es `x ⊔ x`. El caso en que sí decide es la pareja que sólo toca firmas idénticas: ahí
+devuelve `TEOREMA` y el diferencial lo confirma con un merge limpio.
+
+Reproducción: `git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/heads |
+head -20` sobre `platino-labs`, con `--sin-plan --json --jobs 8`. La muestra se mueve con el
+reloj: la cifra vale `@ 26-Nov-2026`, no como constante.
+
 Y el marco importa: el teorema vale contra el **merge-base de la pareja**, no contra el
 tronco. Medido el 25-Nov-2026 en `psf/requests`, 4 de 7 parejas conflictivas tenían soporte
 disjunto *medido contra el tronco* y aun así chocaban — porque lo que chocaba era el lado
@@ -641,8 +666,8 @@ necesita saber en cuál está para leerlo:
 | `criterio` | string | qué se maximizó; sin `--prioridad` se dice que todas pesan 1 |
 | `holgura_inicial` | número o `null` | `null` = `NO_MEDIDO`, nunca `0` |
 | `ramas[]` | objetos | `arnes`/`vivo`/`sim`/`delta_holgura` valen `null` sin masa; `friccion_con_tronco` es `[]` (medido y limpio) o `null` (no medido, con `--sin-friccion`) |
-| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`), `atribucion` (`TRONCO`/`PAR`/`null`) y `prefijo[]` (pares `directorio · ruta` que impidieron el atajo por choque archivo/directorio, vacío en el caso normal); `ilegibles[]` son motivos completos |
-| `decisiones` | objeto | `{TEOREMA, MEDIDO}`: cuántos pares se decidieron por soporte disjunto sin mergear |
+| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`), `atribucion` (`TRONCO`/`PAR`/`null`), `prefijo[]` (pares `directorio · ruta` que impidieron el atajo por choque archivo/directorio, vacío en el caso normal) e `idempotentes[]` (rutas comunes con la misma firma `(modo, blob)`: rutas que no hacen falta mergear); `ilegibles[]` son motivos completos |
+| `decisiones` | objeto | `{TEOREMA, MEDIDO}`: cuántos pares se decidieron sin mergear (soporte disjunto o firma idéntica) |
 | `atribucion` | objeto | `{TRONCO, PAR}`: de los pares en conflicto, cuántos se explican por el tronco (reparación: rebasar) |
 | `marco` | string | sólo en `--lotes`: la precondición post-rebase que la relación segura exige, publicada con el número |
 | `lotes[]` | listas de refs | sólo en `--lotes`: cada lista es una corrida de CI sin choque posible |
@@ -651,6 +676,7 @@ necesita saber en cuál está para leerlo:
 | `minimo_probado` | booleano | sólo en `--lotes`: `true` = la voraz alcanzó la cota, el número de lotes es mínimo |
 | `prescripcion` | lista u `null` | el acto por rama `{ref, atras, estado, clases_comunes[], riesgos[], merges}`; en `REBASAR_CON_MERGE_INTERNO` las clases comunes son `[]` y `riesgos` publica lo que la rama toca, porque no hay prueba que dar; `null` = no pedido con `--prescribir`, `[]` no ocurre (siempre hay al menos una rama) |
 | `duplicados` | objeto | `duplicados_identicos` (pares de `def`) y `parejas_con_duplicados_identicos` (pares de ramas): dos unidades, dos claves |
+| `idempotentes` | objeto | `rutas_idempotentes` (rutas) y `parejas_idempotentes` (pares de ramas): dos unidades, dos claves |
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
 | `resumen` | objeto o `null` | `null` en rama sola: 0 pares no es un resumen |
 | `sola` | objeto o `null` | sólo en `--sin-plan --ref R` |

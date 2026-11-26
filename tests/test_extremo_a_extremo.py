@@ -462,6 +462,50 @@ class TestDuplicadoIdenticoExtremo(unittest.TestCase):
         self.assertIn("mirado, no ausente", salida)
 
 
+class TestIdempotenteEnLaSalida(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = RepoDePrueba()
+        cls.repo.rama("copia_a", "nuevo.py", "z = 1\n")
+        cls.repo.rama("copia_b", "nuevo.py", "z = 1\n")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.repo.cerrar()
+
+    def test_la_poda_se_publica_y_el_merge_la_confirma(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10", "--json",
+            "--ref", "copia_a", "--ref", "copia_b",
+        )
+        datos = json.loads(salida)
+        self.assertEqual(rc, 0, salida)
+        pareja = datos["parejas"][0]
+        self.assertEqual(pareja["decision"], "TEOREMA")
+        self.assertEqual(pareja["idempotentes"], ["nuevo.py"])
+        self.assertEqual(datos["idempotentes"]["rutas_idempotentes"], 1)
+        self.assertEqual(datos["idempotentes"]["parejas_idempotentes"], 1)
+
+        rc, texto = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10",
+            "--ref", "copia_a", "--ref", "copia_b",
+        )
+        self.assertEqual(rc, 0, texto)
+        self.assertIn("IDEMPOTENTES 1 ruta(s)", texto)
+
+    def test_sin_optimizar_da_el_mismo_veredicto(self):
+        rc, salida = _corre(
+            self.repo.path, "--base", "main", "--holgura-inicial", "10", "--json",
+            "--sin-optimizar", "--ref", "copia_a", "--ref", "copia_b",
+        )
+        datos = json.loads(salida)
+        self.assertEqual(rc, 0, salida)
+        pareja = datos["parejas"][0]
+        self.assertEqual(pareja["decision"], "MEDIDO")
+        self.assertEqual(pareja["clase"], "CONMUTA_LIMPIO")
+        self.assertEqual(pareja["textual"], [])
+
+
 class TestTextualEnElPlan(unittest.TestCase):
     """El OPERAR del plan no puede imprimir un `git merge` que se detiene.
 

@@ -6,6 +6,7 @@ atajo **exacto**, y un atajo sin diferencial es una opinión.
 """
 
 import json
+import pathlib
 import subprocess
 import tempfile
 import unittest
@@ -61,6 +62,74 @@ class SoporteDisjunto(Base):
         self.assertEqual(p.clase, P.CONFLICTO_TEXTUAL)
         self.assertEqual(p.propias, ("app.py",))
         self.assertEqual(p.driver, ())
+
+
+class BlobIdempotente(Base):
+    """Tercera poda: dos ramas que dejan la misma firma ``(modo, blob)`` en una ruta común."""
+
+    def _rama_con_modo(self, nombre, archivo, contenido, ejecutable=False):
+        if ejecutable:
+            self.repo._git("config", "core.fileMode", "true")
+        self.repo._git("checkout", "-q", "-B", nombre, "main")
+        self.repo._escribir(archivo, contenido)
+        if ejecutable:
+            (pathlib.Path(self.repo.path) / archivo).chmod(0o755)
+        self.repo._git("add", "-A")
+        self.repo._git("commit", "-qm", nombre)
+        self.repo._git("checkout", "-q", "main")
+
+    def test_misma_firma_es_teorema_y_el_merge_lo_confirma(self):
+        contenido = "z = 1\n"
+        self._rama_con_modo("a", "nuevo.py", contenido)
+        self._rama_con_modo("b", "nuevo.py", contenido)
+
+        p = P.pareja(self.repo.path, "a", "b")
+        self.assertEqual(p.decision, P.TEOREMA)
+        self.assertEqual(p.idempotentes, ("nuevo.py",))
+        self.assertEqual(p.clase, P.CONMUTA_LIMPIO)
+
+        q = P.pareja(self.repo.path, "a", "b", optimizar=False)
+        self.assertEqual(q.decision, P.MEDIDO)
+        self.assertEqual(q.clase, P.CONMUTA_LIMPIO, "la poda no puede cambiar el veredicto")
+        self.assertEqual(q.textual, (), "el merge real no choca")
+
+    def test_mismo_blob_con_modo_distinto_no_es_teorema(self):
+        contenido = "echo hola\n"
+        self._rama_con_modo("a", "m.sh", contenido)
+        self._rama_con_modo("b", "m.sh", contenido, ejecutable=True)
+
+        fa = R.firma(self.repo.path, "a", "m.sh")
+        fb = R.firma(self.repo.path, "b", "m.sh")
+        self.assertIsNotNone(fa)
+        self.assertEqual(fa[1], fb[1], "los bytes son los mismos: lo que difiere es el modo")
+        self.assertNotEqual(fa[0], fb[0])
+
+        p = P.pareja(self.repo.path, "a", "b")
+        self.assertEqual(p.decision, P.MEDIDO, "mismo blob con otro modo choca: no hay atajo")
+        self.assertEqual(p.idempotentes, ())
+        self.assertEqual(p.clase, P.CONFLICTO_TEXTUAL)
+        self.assertEqual(p.propias, ("m.sh",))
+
+        q = P.pareja(self.repo.path, "a", "b", optimizar=False)
+        self.assertEqual(q.clase, p.clase, "la poda no puede cambiar el veredicto")
+
+    def test_borrado_en_las_dos_ramas_es_idempotente(self):
+        self.repo._git("checkout", "-q", "main")
+        self.repo._escribir("efimero.txt", "x\n")
+        self.repo._git("add", "-A")
+        self.repo._git("commit", "-qm", "efimero")
+        for nombre in ("a", "b"):
+            self.repo._git("checkout", "-q", "-B", nombre, "main")
+            self.repo._git("rm", "-q", "efimero.txt")
+            self.repo._git("commit", "-qm", f"{nombre} borra")
+            self.repo._git("checkout", "-q", "main")
+
+        p = P.pareja(self.repo.path, "a", "b")
+        self.assertEqual(p.decision, P.TEOREMA)
+        self.assertEqual(p.idempotentes, ("efimero.txt",))
+
+        q = P.pareja(self.repo.path, "a", "b", optimizar=False)
+        self.assertEqual(q.clase, P.CONMUTA_LIMPIO, "la poda no puede cambiar el veredicto")
 
 
 class DriverDecide(Base):
