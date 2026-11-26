@@ -87,12 +87,37 @@ class _Clases:
             self._padre[rb] = ra
 
 
-def _tocados(repo: str, base: str, punta: str, clases: _Clases) -> set[str]:
-    """Rutas tocadas en ``base..punta`` y los renombrados declarados como aristas."""
+def _distancias(repo: str, tronco: str, ref: str) -> tuple[int, int]:
+    """``(atrás, adelante)`` en **una** llamada: ``--left-right --count`` publica las dos.
+
+    Dos ``rev-list --count`` cuestan 228 ms y una sola 57 ms (medido 25-Nov-2026 en un
+    corpus de 12 000 commits); el número es el mismo campo a campo. Un reloj de pared
+    no es un reloj de duración: las dos formas se comparan por su salida, no por su
+    tiempo.
+    """
     salida = R.exigir(
-        R.git(repo, "diff", "--name-status", "-M", "--find-copies-harder", f"{base}..{punta}"),
-        f"diff --name-status {base}..{punta}",
-    )
+        R.git(repo, "rev-list", "--left-right", "--count", f"{tronco}...{ref}"),
+        f"rev-list --count {tronco}...{ref}",
+    ).split()
+    if len(salida) < 2:
+        raise R.ErrorGit(f"rev-list --left-right {tronco}...{ref}: salida sin dos cuentas")
+    return int(salida[0]), int(salida[1])
+
+
+def _tocados(
+    repo: str, base: str, punta: str, clases: _Clases, *, copias: bool = False
+) -> set[str]:
+    """Rutas tocadas en ``base..punta`` y los renombrados declarados como aristas.
+
+    ``--find-copies-harder`` sólo añade copias **desde fuentes no modificadas** —los
+    renombrados ya los detecta ``-M``— y cuesta 32× por diff (medido 25-Nov-2026:
+    3 283 ms frente a 101 ms). Sobre las 155 ramas vivas del corpus no cambió **ningún**
+    veredicto (18 ``AL_DIA`` · 9 ``REBASAR_LIBRE`` · 128 ``REBASAR_CON_RIESGO`` idéntico)
+    y, rebasando de verdad las 22 ramas cuyas clases se estrechan, no cubrió ni una de
+    las 67 rutas que el acto puso en conflicto. Por eso no es el default: es ``copias``.
+    """
+    args = ["diff", "--name-status", "-M"] + (["--find-copies-harder"] if copias else [])
+    salida = R.exigir(R.git(repo, *args, f"{base}..{punta}"), f"diff --name-status {base}..{punta}")
     tocadas: set[str] = set()
     for linea in salida.splitlines():
         campos = linea.split("\t")
@@ -106,18 +131,13 @@ def _tocados(repo: str, base: str, punta: str, clases: _Clases) -> set[str]:
     return tocadas
 
 
-def prescribir(repo: str, tronco: str, refs: list[str]) -> list[Prescripcion]:
-    """Una prescripción por rama. Sólo lee: dos rev-list y, si hay trabajo, dos diffs."""
+def prescribir(
+    repo: str, tronco: str, refs: list[str], *, copias: bool = False
+) -> list[Prescripcion]:
+    """Una prescripción por rama. Sólo lee: un ``rev-list`` y, si hay trabajo, dos diffs."""
     salida: list[Prescripcion] = []
     for ref in refs:
-        atras = int(
-            R.exigir(R.git(repo, "rev-list", "--count", f"{ref}..{tronco}"), f"rev-list {ref}..")
-            .strip() or 0
-        )
-        adelante = int(
-            R.exigir(R.git(repo, "rev-list", "--count", f"{tronco}..{ref}"), f"rev-list ..{ref}")
-            .strip() or 0
-        )
+        atras, adelante = _distancias(repo, tronco, ref)
         if adelante == 0:
             # Contenida en el tronco: no hay nada que aterrizar. Llamarla REBASAR_LIBRE
             # infla el censo con ramas muertas que rebasan limpias por no tener commits.
@@ -128,8 +148,8 @@ def prescribir(repo: str, tronco: str, refs: list[str]) -> list[Prescripcion]:
             continue
         base = R.base_de_rama(repo, tronco, ref)
         clases = _Clases()
-        de_rama = _tocados(repo, base, ref, clases)
-        de_tronco = _tocados(repo, base, tronco, clases)
+        de_rama = _tocados(repo, base, ref, clases, copias=copias)
+        de_tronco = _tocados(repo, base, tronco, clases, copias=copias)
         comunes = {clases.raiz(p) for p in de_rama} & {clases.raiz(p) for p in de_tronco}
         if not comunes:
             salida.append(Prescripcion(ref=ref, atras=atras, estado=REBASAR_LIBRE))

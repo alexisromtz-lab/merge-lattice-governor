@@ -164,6 +164,140 @@ class ResumenYTexto(unittest.TestCase):
         self.assertEqual(B.texto([]), [])
 
 
+class LaCopiaNoSePagaPorDefecto(unittest.TestCase):
+    """`--find-copies-harder` cuesta 32× y no compró ni una ruta.
+
+    Medido el 25-Nov-2026 sobre las 155 ramas vivas del corpus: 3 283 ms frente a 101 ms
+    por diff, **0 de 137 veredictos** cambiados, y rebasando de verdad las 22 ramas cuyas
+    clases se estrechan, **0 de las 67 rutas** en conflicto salían sólo de la cota ancha.
+    El flag se queda como opt-in, y estos tests fijan que se pueda pedir: la salida
+    estrecha es subconjunto estricto de la ancha, no un reemplazo silencioso.
+    """
+
+    def setUp(self) -> None:
+        self.raiz = tempfile.mkdtemp(prefix="mlg-copias-")
+        g = lambda *a: _git(self.raiz, *a)  # noqa: E731
+        g("init", "-q", "-b", "main")
+        g("config", "user.email", "sonda@ejemplo")
+        g("config", "user.name", "sonda")
+        with open(os.path.join(self.raiz, "a.py"), "w", encoding="utf-8") as f:
+            f.write(CUERPO)
+        g("add", "-A")
+        g("commit", "-qm", "base")
+        # La rama **copia** `a.py`, que el tronco nunca toca. Sólo `--find-copies-harder`
+        # ve la copia: con `-M` a secas el archivo nuevo entra como adición simple.
+        g("checkout", "-q", "-b", "copia")
+        with open(os.path.join(self.raiz, "copia.py"), "w", encoding="utf-8") as f:
+            f.write(CUERPO)
+        g("add", "-A")
+        g("commit", "-qm", "rama: copia a.py sin tocarlo")
+        g("checkout", "-q", "main")
+        with open(os.path.join(self.raiz, "z.py"), "w", encoding="utf-8") as f:
+            f.write(CUERPO)
+        g("add", "-A")
+        g("commit", "-qm", "tronco: avanza por otro lado")
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.raiz, ignore_errors=True)
+
+    def _prescribir(self, **kw) -> B.Prescripcion:
+        return B.prescribir(self.raiz, "main", ["copia"], **kw)[0]
+
+    def test_por_defecto_no_se_pide_la_copia_hardera(self) -> None:
+        vistas: list[tuple[str, ...]] = []
+        original = R.git
+
+        def espia(repo: str, *args: str) -> str:
+            if args and args[0] == "diff":
+                vistas.append(args)
+            return original(repo, *args)
+
+        R.git = espia  # type: ignore[assignment]
+        try:
+            self._prescribir()
+        finally:
+            R.git = original  # type: ignore[assignment]
+        self.assertTrue(vistas, "el sujeto tiene que producir diffs o el test es vacuo")
+        for args in vistas:
+            self.assertNotIn("--find-copies-harder", args)
+            self.assertIn("-M", args, "sin -M los renombrados dejan de ser aristas de identidad")
+
+    def test_pedirla_la_pide(self) -> None:
+        vistas: list[tuple[str, ...]] = []
+        original = R.git
+
+        def espia(repo: str, *args: str) -> str:
+            if args and args[0] == "diff":
+                vistas.append(args)
+            return original(repo, *args)
+
+        R.git = espia  # type: ignore[assignment]
+        try:
+            self._prescribir(copias=True)
+        finally:
+            R.git = original  # type: ignore[assignment]
+        self.assertTrue(vistas)
+        for args in vistas:
+            self.assertIn("--find-copies-harder", args)
+
+    def test_la_cota_ancha_contiene_a_la_estrecha(self) -> None:
+        estrecha = set(self._prescribir().clases)
+        ancha = set(self._prescribir(copias=True).clases)
+        self.assertTrue(estrecha <= ancha, f"{estrecha - ancha} saldría al pedirla: no es cota")
+        self.assertIn("a.py", ancha, "la fuente de la copia entra en la clase ancha")
+        self.assertNotIn("a.py", estrecha, "y por eso el default es estrictamente más barato")
+
+
+class LasDistanciasSonUnaSolaLlamada(unittest.TestCase):
+    """`rev-list --left-right --count` publica las dos cuentas que antes pedían dos walks.
+
+    Dos `rev-list --count` cuestan 228 ms y una sola 57 ms sobre el corpus (medido
+    25-Nov-2026); la salida es el mismo par campo a campo, y aquí se fija contra las dos
+    llamadas de referencia en vez de contra el reloj.
+    """
+
+    def setUp(self) -> None:
+        self.raiz = tempfile.mkdtemp(prefix="mlg-distancias-")
+        g = lambda *a: _git(self.raiz, *a)  # noqa: E731
+        g("init", "-q", "-b", "main")
+        g("config", "user.email", "sonda@ejemplo")
+        g("config", "user.name", "sonda")
+        with open(os.path.join(self.raiz, "a.py"), "w", encoding="utf-8") as f:
+            f.write(CUERPO)
+        g("add", "-A")
+        g("commit", "-qm", "base")
+        g("checkout", "-q", "-b", "atrasada")
+        for i in range(2):
+            with open(os.path.join(self.raiz, "a.py"), "w", encoding="utf-8") as f:
+                f.write(CUERPO + f"propio_{i} = {i}\n")
+            g("commit", "-qam", f"rama {i}")
+        g("checkout", "-q", "main")
+        for i in range(3):
+            with open(os.path.join(self.raiz, "z.py"), "w", encoding="utf-8") as f:
+                f.write(CUERPO + f"tronco_{i} = {i}\n")
+            g("add", "-A")
+            g("commit", "-qm", f"tronco {i}")
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.raiz, ignore_errors=True)
+
+    def test_coincide_con_las_dos_llamadas_de_referencia(self) -> None:
+        atras, adelante = B._distancias(self.raiz, "main", "atrasada")
+        self.assertEqual(
+            (atras, adelante),
+            (
+                int(_git(self.raiz, "rev-list", "--count", "atrasada..main").strip()),
+                int(_git(self.raiz, "rev-list", "--count", "main..atrasada").strip()),
+            ),
+        )
+        self.assertEqual((atras, adelante), (3, 2), "el sujeto tiene que discriminar los ejes")
+        self.assertEqual(B._distancias(self.raiz, "main", "main"), (0, 0))
+
+
 class LaCLILoPublica(unittest.TestCase):
     def setUp(self) -> None:
         self.raiz = tempfile.mkdtemp(prefix="mlg-rebase-cli-")

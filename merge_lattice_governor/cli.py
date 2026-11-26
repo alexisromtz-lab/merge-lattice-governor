@@ -59,6 +59,12 @@ def _parser() -> argparse.ArgumentParser:
         help="publica el acto de cada rama (rebasar libre / con riesgo) por clases de rename",
     )
     p.add_argument(
+        "--copias",
+        action="store_true",
+        help="detecta copias desde fuentes no modificadas (--find-copies-harder): 32× más lento "
+        "y sobre 155 ramas medidas no cambió un solo veredicto ni cubrió una ruta de conflicto",
+    )
+    p.add_argument(
         "--lotes",
         action="store_true",
         help="agrupa las ramas en corridas de CI sin choque posible (soporte disjunto, sin merges)",
@@ -491,7 +497,7 @@ def _lotes_json(l: L.Lotes, args) -> dict:
         "minimo_probado": l.exacto,
         "soportes": {ref: list(rutas) for ref, rutas in l.soportes.items()},
         "prescripcion": _prescripcion_json(
-            B.prescribir(args.repo, args.base, args.ref) if args.prescribir else None
+            B.prescribir(args.repo, args.base, args.ref, copias=args.copias) if args.prescribir else None
         ),
     }
 
@@ -509,7 +515,7 @@ def _modo_lotes(args) -> int:
         print(L.texto(resultado, args.base, oid))
         if args.prescribir:
             print()
-            print(B.texto(B.prescribir(args.repo, args.base, args.ref)))
+            print(B.texto(B.prescribir(args.repo, args.base, args.ref, copias=args.copias)))
     return RC_OK
 
 
@@ -552,7 +558,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ramas = _ramas(args.repo, args.base, args.ref, args.ratio, args.banda, con_masa=not args.sin_plan)
         pesos = _pesos(args.prioridad, ramas)
         prescripcion = (
-            B.prescribir(args.repo, args.base, args.ref) if args.prescribir else None
+            B.prescribir(args.repo, args.base, args.ref, copias=args.copias) if args.prescribir else None
         )
     except (R.ErrorGit, ValueError) as error:
         print(f"RC 2 · {error}", file=sys.stderr)

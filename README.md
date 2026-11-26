@@ -9,23 +9,31 @@ siendo solvente.
 
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
 tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
-pelado —134 pruebas, medido en un Python 3.12 sin PyYAML—.
+pelado —138 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.2
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.7.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
 
-Sin PyPI todavía: se instala desde el repositorio, no por nombre corto —`uvx
-merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
+Sin PyPI todavía, pero **sin clonar**: el wheel viaja como artefacto inmutable del release,
+así que un CI lo instala en una línea y sin compilar.
+
+```console
+$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.7.0/merge_lattice_governor-0.7.0-py3-none-any.whl merge-lattice-governor --version
+$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.7.0/merge_lattice_governor-0.7.0-py3-none-any.whl
+```
+
+`uvx` exige el nombre PEP 427 completo (`nombre-versión-py3-none-any.whl`): un nombre
+abreviado se rechaza antes de instalar.
 
 ### Como hook de `pre-commit`
 
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.6.2
+    rev: v0.7.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -49,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.2
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.7.0
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -65,14 +73,14 @@ Con `lotes: "true"` la acción no pide cubeta y publica las **corridas de CI sin
 posible** —el ahorro de minutos es el producto—:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.2
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.7.0
         with:
           lotes: "true"
           refs: "origin/pr-402 origin/pr-401 origin/pr-403 origin/pr-405"
           salida-json: artefactos/lotes.json
 ```
 
-Se recomienda fijar la etiqueta exacta (`@v0.6.2`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.7.0`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -81,7 +89,7 @@ rama** (`AL_DIA` · `REBASAR_LIBRE` · `REBASAR_CON_RIESGO` · `SIN_TRABAJO`), q
 consulta antes de decidir si el plan es siquiera el problema:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.2
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.7.0
         with:
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
           argumentos: "--prescribir"
@@ -215,8 +223,8 @@ Y la ley que lo sostiene, medida el 27-Nov-2026:
 > de rebase quedaban fuera de la predicción en los PRs abiertos más viejos de `psf/requests`:
 > el tronco había renombrado `requests/models.py` → `src/requests/models.py` y la rama tocó
 > el nombre viejo, así que los conjuntos de nombres salían disjuntos y el par se leía «libre».
-> Agrupando los nombres por clase de rename (`-M --find-copies-harder`, union-find): **0 de
-> 17 fuera**. Sobre la cola del corpus: **0 de 10**. Total: **27 ramas, 27 conflictos, 0 fuera.**
+> Agrupando los nombres por clase de rename (`-M`, union-find): **0 de 17 fuera**. Sobre la
+> cola del corpus: **0 de 10**. Total: **27 ramas, 27 conflictos, 0 fuera.**
 
 Es **cota superior, no igualdad**: `orquestador-video-20261110` predijo 20 archivos y chocó
 en 4; `espejo-publicaciones-20261111` predijo 2 y chocó en 0. Sirve para descartar gratis
@@ -255,6 +263,52 @@ PRESCRIPCIÓN · el acto que pide cada rama (clases de rename, lectura pura)
 
 El agregado y la línea `SIN_TRABAJO` son los medidos sobre la cola del 28-Nov-2026; las filas
 por rama van con marcadores porque son 62.
+
+### La copia hardera cuesta 32× y no compró ni una ruta (`--copias`)
+
+`--find-copies-harder` sólo añade copias **desde fuentes que el diff no modificó** —los
+renombrados ya los detecta `-M`—. Medido el 25-Nov-2026 sobre las **155 ramas vivas** del
+corpus (12 000 commits), con el mismo binario y la misma caché:
+
+| | `--prescribir` completo | por diff |
+|---|---|---|
+| sin el flag (**default**) | **40 s** | 101 ms |
+| con `--copias` | **209 s** | 3 283 ms |
+
+**5,2× de reloj para 0 veredictos.** Los tres estados salieron idénticos —`AL_DIA 18 ·
+REBASAR_LIBRE 9 · REBASAR_CON_RIESGO 128`— y el cuerpo de la salida con `--copias` reproduce
+**byte a byte** el de la versión anterior: el flag no cambió ni un renglón del censo. Lo que
+sí cambia es **la lista de clases** de 22 de las 137 ramas: se estrecha, porque una copia que
+sólo el flag veía entraba en la clase de identidad como si fuera una arista.
+
+¿Y ese estrechamiento pierde cobertura? Se rebasaron **de verdad** las 22 ramas
+(`git rebase --rebase-merges` sobre el tronco medido, en un clon `--shared`): las 22
+conflictúan, produciendo **67 rutas** en conflicto.
+
+- dentro de la cota ancha: **3** rutas
+- dentro de la cota estrecha: **3** rutas — las mismas tres
+- rutas que **sólo** la cota ancha cubría: **0**
+
+De ahí sale una ley que la tabla anterior no podía ver:
+
+> **La prescripción es función del diff neto `base..ref`; el acto re-aplica el grafo de
+> commits.** Las tres rutas que la cota no ve son exactamente las rutas que el diff neto
+> **no puede ver** y el replay **sí**: dos archivos creados y borrados dentro de la rama
+> (aparecen en `git log --name-only`, no en `git diff --name-only`), y uno modificado sólo
+> del lado de la rama, cuyo conflicto vive dentro de un merge que el replay re-ejecuta.
+
+No es un defecto del flag: es el borde donde la cota y el acto dejan de hablar del mismo
+objeto. Un `REBASAR_LIBRE` sigue probado; una lista de `riesgos` sigue siendo lo que **puede**
+chocar.
+
+El mismo día, dos `git rev-list --count` se sustituyeron por uno solo
+(`--left-right --count`, que publica el par `(atrás, adelante)`): **57 ms frente a 228 ms**,
+mismo número campo a campo.
+
+```console
+$ merge-lattice-governor --base origin/main --prescribir            # 40 s, 155 ramas
+$ merge-lattice-governor --base origin/main --prescribir --copias   # 209 s, la cota ancha
+```
 
 ### Censo de la cola: la población se declara antes que el porcentaje
 
@@ -561,7 +615,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.2
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.7.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
