@@ -1,6 +1,6 @@
 # Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs
 
-**Technical note · 2026-11-28 · version 1.0**
+**Technical note · 2026-11-28 · version 1.0 · DOI [10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464)**
 Companion to `merge-lattice-governor` v0.6.1 (`a25de3f`), `composicion-core`,
 `py-test-shadow-guard`. All numbers were produced by the commands in §7 on a disposable clone;
 no figure in this note is an estimate.
@@ -153,3 +153,16 @@ reasoning.
 MIT. `composicion-core` (oracle and pairwise lattice), `merge-lattice-governor` (this note's
 subject), `py-test-shadow-guard` (AST method-shadowing guard) — all zero-dependency Python,
 verified by cold clone from GitHub.
+
+## Deposit
+
+This note is deposited under CC-BY-4.0, with the machine-readable evidence it cites
+(`evidencia_lotes_20261128.json`), at DOI
+[10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464). The deposit is a snapshot:
+the GitHub repositories remain the living subject, and a later census will require a new
+version of the deposit rather than an edit of this one.
+
+Cite as:
+
+> Román Martínez, J. A. (2026). *Algebraic Merge Queues: bounding Git rebase conflicts without
+> reading blobs* (version 1.0). Zenodo. https://doi.org/10.5281/zenodo.24548464

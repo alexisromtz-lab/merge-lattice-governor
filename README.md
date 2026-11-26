@@ -1,6 +1,6 @@
 # merge-lattice-governor
 
-[![ci](https://github.com/alexisromtz-lab/merge-lattice-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/alexisromtz-lab/merge-lattice-governor/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![deps](https://img.shields.io/badge/dependencies-0-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue)
+[![ci](https://github.com/alexisromtz-lab/merge-lattice-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/alexisromtz-lab/merge-lattice-governor/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![deps](https://img.shields.io/badge/dependencies-0-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) [![doi](https://zenodo.org/badge/DOI/10.5281/zenodo.24548464.svg)](https://doi.org/10.5281/zenodo.24548464)
 
 **El orden en que aterrizas tus ramas decide si el trinquete aguanta.** Este CLI mide las
 masas de cada rama, comprueba qué parejas conmutan de verdad (texto **y** símbolos), y
@@ -9,7 +9,7 @@ siendo solvente.
 
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
 tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
-pelado —108 pruebas, medido en un Python 3.12 sin PyYAML—.
+pelado —131 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
 $ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.0
@@ -698,6 +698,17 @@ El único caso no comparable es `aviso-global`: este paquete **no tiene canal de
 que el juez no puede puntuar un aviso donde no hay dónde emitirlo. Es una frontera de
 contrato declarada, no una discrepancia escondida; los otros tres huecos (rama sola,
 `NO_MEDIDO`, duplicado interno) se cerraron en 0.1.2 y el juez los puntúa.
+
+## La nota técnica — la ley, medida y con DOI
+
+La ley de este paquete (clases de rename ⇒ cota de conflictos de rebase) está publicada como
+nota técnica en inglés, con las dos poblaciones del censo declaradas y el instrumento
+(`git rebase --rebase-merges`) que sin el flag fabricaba conflictos:
+
+**[Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs](docs/nota-tecnica-en.md)**
+· DOI de esta versión [`10.5281/zenodo.24548464`](https://doi.org/10.5281/zenodo.24548464)
+· DOI de todas las versiones [`10.5281/zenodo.24548463`](https://doi.org/10.5281/zenodo.24548463)
+· CC-BY-4.0, depositada con la evidencia en JSON que cita.
 
 ## Licencia
 
