@@ -59,8 +59,11 @@ class Sujeto(unittest.TestCase):
         g("mv", "a.py", "b.py")
         self._escribir("b.py", CUERPO.replace("linea_5 = 5", "linea_5 = 555"))
         g("commit", "-qam", "tronco: renombra y edita")
+        g("branch", "ya-fundida", "main~1")
 
         g("checkout", "-q", "-b", "al-dia")
+        self._escribir("z.py", CUERPO.replace("linea_1 = 1", "linea_1 = 101"))
+        g("commit", "-qam", "al-dia: trabajo propio sobre el tronco ya presente")
 
     def tearDown(self) -> None:
         import shutil
@@ -72,7 +75,8 @@ class Sujeto(unittest.TestCase):
             f.write(texto)
 
     def prescripciones(self) -> dict[str, B.Prescripcion]:
-        return {p.ref: p for p in B.prescribir(self.raiz, "main", ["toca-viejo", "toca-otro", "al-dia"])}
+        refs = ["toca-viejo", "toca-otro", "al-dia", "ya-fundida"]
+        return {p.ref: p for p in B.prescribir(self.raiz, "main", refs)}
 
 
 class LaClaseAcierta(Sujeto):
@@ -99,6 +103,30 @@ class LaClaseAcierta(Sujeto):
         self.assertEqual(p.atras, 0)
 
 
+class LaRamaYaFundidaNoInflaElCenso(Sujeto):
+    """213 de las 275 refs del corpus estaban ya en el tronco.
+
+    Sin `SIN_TRABAJO` entraban como `REBASAR_LIBRE` —rebase limpio por no tener nada que
+    reaplicar— y publicaban «72,5 % de la cola pide rebase probado» sobre una población
+    que en su mayoría no tenía commits propios. El estado nombra lo que la rama es.
+    """
+
+    def test_la_rama_contenida_se_nombra_y_no_se_cuenta_libre(self) -> None:
+        p = self.prescripciones()["ya-fundida"]
+        self.assertEqual(p.estado, B.SIN_TRABAJO)
+        self.assertEqual(p.atras, 1, "el tronco le lleva un commit, y eso se publica")
+        self.assertEqual(p.clases, ())
+
+    def test_su_commit_ya_esta_en_el_tronco(self) -> None:
+        """Sin esto el estado sería una etiqueta: la rama no aporta ninguna ruta."""
+        self.assertEqual(
+            _git(self.raiz, "diff", "--name-only", "main...ya-fundida"), "", "nada que aterrizar"
+        )
+        self.assertEqual(
+            _git(self.raiz, "rev-list", "--count", "main..ya-fundida").strip(), "0"
+        )
+
+
 class ElNombreSeQuedaCorto(Sujeto):
     """La mitad que se refutó: por nombres, esta pareja parece libre y no lo está."""
 
@@ -111,16 +139,26 @@ class ElNombreSeQuedaCorto(Sujeto):
 
 
 class ResumenYTexto(unittest.TestCase):
-    def test_el_resumen_cuenta_las_tres_clases(self) -> None:
+    def test_el_resumen_cuenta_las_cuatro_clases(self) -> None:
         casos = [
             B.Prescripcion("a", 0, B.AL_DIA),
             B.Prescripcion("b", 3, B.REBASAR_LIBRE),
             B.Prescripcion("c", 9, B.REBASAR_CON_RIESGO, ("x.py",), ("x.py",)),
+            B.Prescripcion("d", 40, B.SIN_TRABAJO),
         ]
-        self.assertEqual(B.resumen(casos), {B.AL_DIA: 1, B.REBASAR_LIBRE: 1, B.REBASAR_CON_RIESGO: 1})
+        self.assertEqual(
+            B.resumen(casos),
+            {B.AL_DIA: 1, B.REBASAR_LIBRE: 1, B.REBASAR_CON_RIESGO: 1, B.SIN_TRABAJO: 1},
+        )
         texto = "\n".join(B.texto(casos))
         self.assertIn("rebase sin riesgo textual medible", texto)
         self.assertIn("x.py", texto)
+        self.assertIn("no piden aterrizaje ni rebase", texto)
+
+    def test_sin_ramas_fundidas_no_hay_linea_de_sobra(self) -> None:
+        casos = [B.Prescripcion("b", 3, B.REBASAR_LIBRE)]
+        self.assertEqual(B.resumen(casos)[B.SIN_TRABAJO], 0)
+        self.assertNotIn("no piden aterrizaje", "\n".join(B.texto(casos)))
 
     def test_sin_ramas_no_hay_seccion(self) -> None:
         self.assertEqual(B.texto([]), [])

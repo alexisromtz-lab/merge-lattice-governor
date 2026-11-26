@@ -6,6 +6,7 @@ rama atrasada como parte, y rebasar es el único acto que los toca.
 
 Este módulo publica el acto **antes** de ejecutarlo, sin leer un solo blob:
 
+    SIN_TRABAJO        la rama no tiene commits propios: ya está en el tronco, no pide aterrizaje.
     REBASAR_LIBRE      ninguna clase de identidad tocada por los dos lados.
     REBASAR_CON_RIESGO las clases comunes, para que el operador sepa qué archivos verá.
     AL_DIA             la rama ya contiene el tronco.
@@ -21,6 +22,22 @@ Contra el acto real, el 27-Nov-2026: 28 ramas del corpus rebasadas de verdad
 rebases limpios; 14 `REBASAR_CON_RIESGO` ⇒ 10 con conflicto (14 rutas) y 4 limpios;
 **0 rutas fuera de las clases declaradas**. El acto confirma la cota.
 
+Censo con la población declarada, 28-Nov-2026 (tronco `34ee1d2c8`, 275 refs locales):
+**213 de las 275 ya están contenidas en el tronco** y no piden aterrizaje — sin
+`SIN_TRABAJO` entraban como 213 `REBASAR_LIBRE` y el 72,5 % de la cola era un artefacto de
+población—. Quedan **62 ramas vivas**, rebasadas de verdad con `git rebase --rebase-merges`:
+
+| prescrito | n | rebase limpio | conflicto |
+|---|---|---|---|
+| `AL_DIA` | 7 | 7 | 0 |
+| `REBASAR_LIBRE` | 2 | 2 | 0 |
+| `REBASAR_CON_RIESGO` | 53 | 7 | 46 |
+
+**9 de 9 veredictos «sin riesgo» respetados · 46 ramas en conflicto, 109 rutas, 1 fuera de
+clase** (una `BITACORA/bloque-*.md` nueva). Instrumento: sin `--rebase-merges`, 3 ramas
+`AL_DIA` con mergers del tronco en su historia se leían en conflicto sobre
+`BITACORA/registro.jsonl` — el aplanado re-aplica lo que el tronco ya tiene.
+
 Límite declarado: es cota **superior**, no igualdad. `orquestador-video` predijo 20 clases
 y produjo 4 conflictos; `espejo-publicaciones` predijo 2 y produjo 0. Sirve para descartar
 gratis (`REBASAR_LIBRE`), no para prometer.
@@ -33,6 +50,7 @@ from dataclasses import dataclass, field
 from . import repo as R
 
 AL_DIA = "AL_DIA"
+SIN_TRABAJO = "SIN_TRABAJO"
 REBASAR_LIBRE = "REBASAR_LIBRE"
 REBASAR_CON_RIESGO = "REBASAR_CON_RIESGO"
 
@@ -89,17 +107,26 @@ def _tocados(repo: str, base: str, punta: str, clases: _Clases) -> set[str]:
 
 
 def prescribir(repo: str, tronco: str, refs: list[str]) -> list[Prescripcion]:
-    """Una prescripción por rama. Sólo lee: dos diffs y un rev-list por rama."""
+    """Una prescripción por rama. Sólo lee: dos rev-list y, si hay trabajo, dos diffs."""
     salida: list[Prescripcion] = []
     for ref in refs:
-        base = R.base_de_rama(repo, tronco, ref)
         atras = int(
             R.exigir(R.git(repo, "rev-list", "--count", f"{ref}..{tronco}"), f"rev-list {ref}..")
             .strip() or 0
         )
+        adelante = int(
+            R.exigir(R.git(repo, "rev-list", "--count", f"{tronco}..{ref}"), f"rev-list ..{ref}")
+            .strip() or 0
+        )
+        if adelante == 0:
+            # Contenida en el tronco: no hay nada que aterrizar. Llamarla REBASAR_LIBRE
+            # infla el censo con ramas muertas que rebasan limpias por no tener commits.
+            salida.append(Prescripcion(ref=ref, atras=atras, estado=SIN_TRABAJO))
+            continue
         if atras == 0:
             salida.append(Prescripcion(ref=ref, atras=0, estado=AL_DIA))
             continue
+        base = R.base_de_rama(repo, tronco, ref)
         clases = _Clases()
         de_rama = _tocados(repo, base, ref, clases)
         de_tronco = _tocados(repo, base, tronco, clases)
@@ -125,7 +152,7 @@ def prescribir(repo: str, tronco: str, refs: list[str]) -> list[Prescripcion]:
 
 
 def resumen(prescripciones: list[Prescripcion]) -> dict[str, int]:
-    cuenta = {AL_DIA: 0, REBASAR_LIBRE: 0, REBASAR_CON_RIESGO: 0}
+    cuenta = {AL_DIA: 0, SIN_TRABAJO: 0, REBASAR_LIBRE: 0, REBASAR_CON_RIESGO: 0}
     for p in prescripciones:
         cuenta[p.estado] = cuenta.get(p.estado, 0) + 1
     return cuenta
@@ -140,8 +167,13 @@ def texto(prescripciones: list[Prescripcion]) -> list[str]:
         f"  {AL_DIA} {cuenta[AL_DIA]} · {REBASAR_LIBRE} {cuenta[REBASAR_LIBRE]} · "
         f"{REBASAR_CON_RIESGO} {cuenta[REBASAR_CON_RIESGO]}",
     ]
+    if cuenta[SIN_TRABAJO]:
+        lineas.append(
+            f"  {SIN_TRABAJO} {cuenta[SIN_TRABAJO]}: sus commits ya están en el tronco, "
+            "no piden aterrizaje ni rebase"
+        )
     for p in prescripciones:
-        if p.estado == AL_DIA:
+        if p.estado in (AL_DIA, SIN_TRABAJO):
             continue
         if p.estado == REBASAR_LIBRE:
             lineas.append(f"  · {p.ref}  atrás {p.atras}  rebase sin riesgo textual medible")

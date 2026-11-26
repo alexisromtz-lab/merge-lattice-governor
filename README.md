@@ -192,7 +192,8 @@ leer un solo blob —dos `git diff` y un `rev-list` por rama—:
 
 | estado | significado |
 |---|---|
-| `AL_DIA` | la rama ya contiene el tronco: no pide acto |
+| `SIN_TRABAJO` | **0 commits propios**: la rama ya está en el tronco, no pide aterrizaje ni rebase |
+| `AL_DIA` | la rama contiene el tronco y tiene trabajo propio: no pide acto |
 | `REBASAR_LIBRE` | **0 clases de identidad** tocadas por los dos lados: rebase sin conflicto textual |
 | `REBASAR_CON_RIESGO` | las clases comunes, para que el operador sepa qué archivos verá |
 
@@ -223,19 +224,55 @@ no el veredicto.
 $ merge-lattice-governor --base origin/main --prescribir --sin-plan --ref origen/rama-a --json
 ```
 
-### Censo completo de la cola: 309 ramas
+La salida de texto publica `SIN_TRABAJO` en **una línea agregada** y saca esas refs del
+cuerpo: una rama que ya está en el tronco no es una rama de la cola, y listarla rama a rama
+era lo que hacía parecer que la cola tenía 275 miembros.
+
+```console
+$ merge-lattice-governor --base origin/main --prescribir
+PRESCRIPCIÓN · el acto que pide cada rama (clases de rename, lectura pura)
+  AL_DIA 7 · REBASAR_LIBRE 2 · REBASAR_CON_RIESGO 53
+  SIN_TRABAJO 213: sus commits ya están en el tronco, no piden aterrizaje ni rebase
+  · origen/rama-a  atrás 41  rebase con 1 archivo(s) en juego
+      tools/indice_platino.py
+```
+
+### Censo de la cola: la población se declara antes que el porcentaje
 
 `--prescribir` sobre las **309 ramas** `origin/worker/*` del corpus (28-Nov-2026, tronco
-`34ee1d2c`, 258 bases distintas, un `diff` por base y por rama — no dos por rama):
+`34ee1d2c`, 258 bases distintas, un `diff` por base y por rama — no dos por rama) dio
+`AL_DIA` 17 · `REBASAR_LIBRE` 224 · `REBASAR_CON_RIESGO` 68. **Ese 72,5 % era un artefacto
+de población, y esta sección lo corrige.** De las 275 refs locales, **213 ya están contenidas
+en el tronco** (`git merge-base --is-ancestor`): no tienen commits propios, rebasan limpias
+por no tener nada que reaplicar y entraban como `REBASAR_LIBRE`. La población viva es **62**.
 
-| estado | ramas | % |
+| estado (275 refs locales) | v0.6.0 | v0.6.1 |
 |---|---|---|
-| `AL_DIA` | 17 | 5,5 % |
-| `REBASAR_LIBRE` | **224** | **72,5 %** |
-| `REBASAR_CON_RIESGO` | 68 | 22,0 % |
+| `SIN_TRABAJO` (ya en el tronco) | — | **213** |
+| `AL_DIA` | 7 | 7 |
+| `REBASAR_LIBRE` | **215** | **2** |
+| `REBASAR_CON_RIESGO` | 53 | 53 |
 
-**El 72,5 % de la cola no pide merge-tree: pide un rebase probado.** Las 68 con riesgo se
-concentran en el extremo viejo (2000+ commits atrás), pero **el rezago no es el predictor**:
+**Contra el acto real, con la población declarada** (62 ramas vivas, clon desechable,
+`git rebase --rebase-merges` sobre `34ee1d2c8`):
+
+| prescrito | n | rebase limpio | conflicto |
+|---|---|---|---|
+| `AL_DIA` | 7 | **7** | 0 |
+| `REBASAR_LIBRE` | 2 | **2** | 0 |
+| `REBASAR_CON_RIESGO` | 53 | 7 | **46** |
+
+**9 de 9 veredictos «sin riesgo» respetados y 0 falsos seguros**; las 46 en conflicto
+publicaron **109 rutas, 1 fuera de las clases declaradas** (una `BITACORA/bloque-*.md`
+nueva): **0,9 %**. El rezago no es el predictor, y ahora tampoco lo es el tamaño aparente de
+la cola.
+
+**El instrumento también tenía su marco.** Sin `--rebase-merges`, 3 ramas `AL_DIA` —con
+mergers del tronco dentro de su historia— se leían en conflicto sobre `BITACORA/registro.jsonl`:
+el aplanado reaplica commits que el tronco ya tiene. Con el instrumento corregido, 7/7 limpias.
+Una rama que ya contiene el tronco no se rebasa: se mide con la pregunta correcta.
+
+**El rezago no es el predictor** —medido sobre la misma cola del 28-Nov-2026—:
 
 | rama | atrás | clases en juego |
 |---|---|---|
@@ -248,12 +285,10 @@ Mil ochocientos commits de rezago con dos clases contra doce commits con una. Cu
 umbral `τ_lag` que declare «reconstruir el diff neto en vez de rebasar» corta el conjunto
 equivocado: **lo que decide es el traslape de clases de rename, no la distancia**.
 
-**Contra el acto real, la muestra grande:** 24 ramas `REBASAR_LIBRE` elegidas una de cada
-nueve por rezago (de 1 a 2000 commits atrás) rebasadas de verdad en un clon desechable:
-**24/24 limpias, 0 conflictos**. Sumado a las 28 del 27-Nov-2026, **52 ramas rebasadas de
-verdad, 52 veredictos del modelo respetados, 0 rutas fuera de las clases declaradas**. Una
-rama 2000 commits atrás rebasa sin conflicto si sus clases no traslapan: el rezago no es
-deuda de merge.
+**La 24/24 de v0.6.0, con su población:** el número se sostiene (24 ramas rebasadas de
+verdad, 24 limpias), pero 213 de las 215 «LIBRE» de donde salió ya estaban en el tronco. Lo
+que prueba la ley no es esa muestra: es la tabla de 62 ramas vivas de arriba, donde las
+`REBASAR_CON_RIESGO` publican sus conflictos dentro de clase con **1 ruta fuera de 109**.
 
 ## Lotes: agrupar PRs que conmutan en una sola corrida de CI (`--lotes`)
 
@@ -291,7 +326,11 @@ su marco miente en silencio.**
 | muestra | pares | seguros → limpios | no seguros → conflicto |
 |---|---|---|---|
 | 15 ramas de la cola, rebasadas | 10 | **9/9** | **1/1** (en el archivo exacto declarado) |
-| 24 ramas `REBASAR_LIBRE`, rebasadas | 276 | **276/276** | — (ninguna comparte archivo) |
+| 24 ramas `REBASAR_LIBRE` de v0.6.0, rebasadas † | 276 | **276/276** | — (ninguna comparte archivo) |
+
+† La muestra de 24 salió de las 215 «LIBRE» de v0.6.0, de las que **213 ya estaban en el
+tronco** (§ *la población se declara antes que el porcentaje*): el número se sostiene, la
+población no probaba lo que parecía. La fila que prueba la ley es la de 15 ramas.
 
 **Cotas.** `χ(G) ≥ ω(G)`, y `ω(G) ≥ max_archivo |{ramas que lo tocan}|` —toda rama que toca
 un archivo es adyacente a todas las demás que lo tocan— es exacta y gratis. La coloración
