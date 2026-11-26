@@ -827,7 +827,8 @@ contra el replay que acota lo que la cota no puede ver:
 **[Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs](docs/nota-tecnica-en.md)**
 · DOI de todas las versiones [`10.5281/zenodo.24548463`](https://doi.org/10.5281/zenodo.24548463)
 (estable entre depósitos)
-· DOI de esta versión, `1.2` [`10.5281/zenodo.24570948`](https://doi.org/10.5281/zenodo.24570948)
+· DOI de esta versión, `1.3` [`10.5281/zenodo.24571247`](https://doi.org/10.5281/zenodo.24571247)
+· `1.2` [`10.5281/zenodo.24570948`](https://doi.org/10.5281/zenodo.24570948)
 · `1.1` [`10.5281/zenodo.24564357`](https://doi.org/10.5281/zenodo.24564357)
 · `1.0` [`10.5281/zenodo.24548464`](https://doi.org/10.5281/zenodo.24548464)
 · CC-BY-4.0, depositada con la evidencia en JSON que cita.

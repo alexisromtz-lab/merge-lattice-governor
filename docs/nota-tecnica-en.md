@@ -1,7 +1,7 @@
 # Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs
 
-**Technical note · 2026-11-26 · version 1.2 · DOI [10.5281/zenodo.24570948](https://doi.org/10.5281/zenodo.24570948)**
-Companion to `merge-lattice-governor` v0.8.0 (`0e4c38a` + `6.1`), `composicion-core`,
+**Technical note · 2026-11-26 · version 1.3 · DOI [10.5281/zenodo.24571247](https://doi.org/10.5281/zenodo.24571247)**
+Companion to `merge-lattice-governor` v0.9.0 (`ba55bb5`), `composicion-core`,
 `py-test-shadow-guard`. All numbers were produced by the commands in §7 on a disposable clone;
 no figure in this note is an estimate.
 
@@ -257,19 +257,24 @@ verified by cold clone from GitHub.
 This note is deposited under CC-BY-4.0, with the machine-readable evidence it cites
 (`evidencia_lotes_20261128.json`, the four coverage/verdict tables, and the five probe scripts of
 `evidencia/2026-11-26/`), at DOI
-[10.5281/zenodo.24570948](https://doi.org/10.5281/zenodo.24570948). Version `1.2` supersedes `1.1`
-(`24564357`) because §6.1 falsifies a sentence of §6; the deposit carries the correction in its
-description so a reader who lands on the metadata sees it before the file. The deposit is a
-snapshot: the GitHub repositories remain the living subject, and a later census will require a new
-version of the deposit rather than an edit of this one.
+[10.5281/zenodo.24571247](https://doi.org/10.5281/zenodo.24571247). Version `1.3` supersedes `1.2`
+(`24570948`) because the theorem as §7 stated it —"a three-way merge with one base cannot conflict
+between change sets on disjoint files"— was one condition short: a file `dw` on one side and
+`dw/inner.txt` on the other share no path and collide anyway. §7 now carries the measured
+falsification and the corrected predicate, and §7.1 carries the cost of the pairwise matrix and
+what parallelism buys. `1.2` superseded `1.1` (`24564357`) because §6.1 falsifies a sentence of
+§6. Each deposit carries its correction in the description, so a reader who lands on the metadata
+sees it before the file. The deposit is a snapshot: the GitHub repositories remain the living
+subject, and a later census will require a new version of the deposit rather than an edit of this
+one.
 
 Cite as:
 
 > Román Martínez, J. A. (2026). *Algebraic Merge Queues: bounding Git rebase conflicts without
-> reading blobs* (version 1.2). Zenodo. https://doi.org/10.5281/zenodo.24570948
+> reading blobs* (version 1.3). Zenodo. https://doi.org/10.5281/zenodo.24571247
 
 `24548463` is the **concept** DOI: it resolves to the latest version and stays stable across
-deposits. Each version also carries its own DOI; v1.0 is `24548464`, v1.1 is `24564357` and
-v1.2, which supersedes both, is `24570948`. The v1.0 record declares `2026-11-28`, a date ahead
+deposits. Each version also carries its own DOI; v1.0 is `24548464`, v1.1 is `24564357`, v1.2 is
+`24570948` and v1.3, which supersedes them, is `24571247`. The v1.0 record declares `2026-11-28`, a date ahead
 of this revision; recorded dates are republished as they were recorded rather than corrected in
 silence, so this revision declares the date of its own measurement.
