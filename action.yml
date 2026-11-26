@@ -8,8 +8,9 @@ branding:
 
 inputs:
   holgura-inicial:
-    description: Holgura de la cubeta antes de aterrizar nada (obligatoria; la ley de masa es de quien opera la cola)
-    required: true
+    description: Holgura de la cubeta antes de aterrizar nada (obligatoria cuando hay plan; con lotes=true se omite)
+    required: false
+    default: ""
   refs:
     description: Ramas a ordenar, separadas por espacio o coma (p. ej. "origin/pr-401 origin/pr-402")
     required: true
@@ -27,6 +28,10 @@ inputs:
     default: ""
   banda:
     description: Banda de techo del trinquete (fracción; si se omite, se deduce del tronco)
+    required: false
+    default: ""
+  lotes:
+    description: Publica las corridas de CI sin choque posible en vez de un plan (no pide holgura)
     required: false
     default: ""
   argumentos:
@@ -62,6 +67,7 @@ runs:
         INPUT_REPO: ${{ inputs.repo }}
         INPUT_RATIO: ${{ inputs.ratio }}
         INPUT_BANDA: ${{ inputs.banda }}
+        INPUT_LOTES: ${{ inputs.lotes }}
         INPUT_ARGUMENTOS: ${{ inputs.argumentos }}
         INPUT_SALIDA_JSON: ${{ inputs.salida-json }}
       run: |

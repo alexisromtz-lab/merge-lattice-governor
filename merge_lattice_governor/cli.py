@@ -8,6 +8,7 @@ import sys
 from typing import Sequence
 
 from . import __version__
+from . import lotes as L
 from . import parejas as P
 from . import rebase as B
 from . import repo as R
@@ -56,6 +57,11 @@ def _parser() -> argparse.ArgumentParser:
         "--prescribir",
         action="store_true",
         help="publica el acto de cada rama (rebasar libre / con riesgo) por clases de rename",
+    )
+    p.add_argument(
+        "--lotes",
+        action="store_true",
+        help="agrupa las ramas en corridas de CI sin choque posible (soporte disjunto, sin merges)",
     )
     p.add_argument("--json", action="store_true")
     p.add_argument(
@@ -381,7 +387,14 @@ def _self_test() -> int:
     exigente = planificar([Rama("nula", Masa(0, 0, 0))], 0.0)
     assert exigente.integradas == 0, "holgura exactamente 0 no es solvencia"
 
+    sop = {"a": ("x.py",), "b": ("x.py",), "c": ("y.py",)}
+    grupos = L.colorear(L.choques(sop))
+    assert len(grupos) == 2, grupos
+    assert not any({"a", "b"} <= set(g) for g in grupos), "dos ramas sobre x.py nunca comparten lote"
+    assert L.cota_inferior(sop) == 2, "dos ramas sobre x.py son una clique de tamaño 2"
+
     print("self-test OK · corredor -1020.35 → +46.62 · pago primero · prefijo estricto")
+    print("self-test OK · lotes: coloración sin arista intra-lote · cota inferior = clique de archivo")
     return RC_OK
 
 
@@ -462,6 +475,44 @@ def _texto_sola(repo: str, base: str, ref: str, hallazgos: tuple[str, ...],
     return "\n".join(lineas)
 
 
+def _lotes_json(l: L.Lotes, args) -> dict:
+    return {
+        "schema": ESQUEMA,
+        "version": __version__,
+        "repo": args.repo,
+        "base": args.base,
+        "criterio": "lotes: coloración del grafo de choque por soporte de archivo (sin merges)",
+        "marco": L.MARCO,
+        "ramas": list(l.ramas),
+        "pares": {"total": l.pares, "seguros": l.pares_seguros, "no_seguros": l.pares_no_seguros},
+        "lotes": [list(g) for g in l.lotes],
+        "numero_de_lotes": len(l.lotes),
+        "cota_inferior": l.cota_inferior,
+        "minimo_probado": l.exacto,
+        "soportes": {ref: list(rutas) for ref, rutas in l.soportes.items()},
+        "prescripcion": _prescripcion_json(
+            B.prescribir(args.repo, args.base, args.ref) if args.prescribir else None
+        ),
+    }
+
+
+def _modo_lotes(args) -> int:
+    try:
+        resultado = L.lotes(args.repo, args.base, args.ref)
+        oid = R.resolver(args.repo, args.base)[:8]
+    except R.ErrorGit as error:
+        print(f"RC 2 · {error}", file=sys.stderr)
+        return RC_ENTRADA
+    if args.json:
+        print(json.dumps(_lotes_json(resultado, args), ensure_ascii=False, indent=2))
+    else:
+        print(L.texto(resultado, args.base, oid))
+        if args.prescribir:
+            print()
+            print(B.texto(B.prescribir(args.repo, args.base, args.ref)))
+    return RC_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.self_test:
@@ -470,22 +521,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.ref:
         print("RC 2 · falta --ref: sin población no hay denominador", file=sys.stderr)
         return RC_ENTRADA
-    if args.sin_plan and args.sin_parejas and not args.prescribir:
+    if args.sin_plan and args.sin_parejas and not args.prescribir and not args.lotes:
         print("RC 2 · --sin-plan y --sin-parejas no dejan nada que medir", file=sys.stderr)
         return RC_ENTRADA
-    if len(args.ref) < 2 and not args.sin_parejas and not args.sin_plan and not args.prescribir:
+    if len(args.ref) < 2 and not args.sin_parejas and not args.sin_plan and not args.prescribir and not args.lotes:
         print(
             "RC 2 · la matriz necesita >=2 ramas: una matriz de 0 pares no es una matriz limpia;"
             " usa --sin-parejas para planificar una sola rama o --sin-plan --ref R para auditarla",
             file=sys.stderr,
         )
         return RC_ENTRADA
-    if args.holgura_inicial is None and not args.sin_plan:
+    if args.holgura_inicial is None and not args.sin_plan and not args.lotes:
         print("RC 2 · falta --holgura-inicial: una solvencia sin punto de partida es una ficción", file=sys.stderr)
         return RC_ENTRADA
     if not R.es_repo(args.repo):
         print(f"RC 2 · no es un repositorio git: {args.repo}", file=sys.stderr)
         return RC_ENTRADA
+
+    if args.lotes:
+        return _modo_lotes(args)
 
     try:
         ramas = _ramas(args.repo, args.base, args.ref, args.ratio, args.banda, con_masa=not args.sin_plan)

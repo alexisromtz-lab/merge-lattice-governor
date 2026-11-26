@@ -14,8 +14,16 @@ holgura="${INPUT_HOLGURA:-}"
 refs="${INPUT_REFS:-}"
 extra="${INPUT_ARGUMENTOS:-}"
 salida="${INPUT_SALIDA_JSON:-}"
+lotes="${INPUT_LOTES:-}"
 
-if [ -z "$holgura" ]; then
+# --lotes y --sin-plan no deciden un plan, así que no piden cubeta. La holgura se exige
+# sólo cuando hay plan que decidir; el resto de los modos se lo dice el CLI, no este cuerpo.
+sin_cubeta=0
+if [ "$lotes" = "true" ]; then sin_cubeta=1; fi
+case " $extra " in
+  *" --lotes "*|*" --sin-plan "*) sin_cubeta=1;;
+esac
+if [ -z "$holgura" ] && [ "$sin_cubeta" -eq 0 ]; then
   echo "merge-lattice-governor: falta el input holgura-inicial" >&2
   echo "una solvencia sin punto de partida es una ficción: el plan se declara NO_MEDIDO" >&2
   exit 2
@@ -25,7 +33,9 @@ if [ -z "$refs" ]; then
   exit 2
 fi
 
-argv=(--repo "$repo" --base "$base" --holgura-inicial "$holgura")
+argv=(--repo "$repo" --base "$base")
+if [ -n "$holgura" ]; then argv+=(--holgura-inicial "$holgura"); fi
+if [ "$lotes" = "true" ]; then argv+=(--lotes); fi
 for ref in ${refs//,/ }; do
   argv+=(--ref "$ref")
 done

@@ -12,7 +12,7 @@ tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en u
 pelado —108 pruebas, medido en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.2
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -25,7 +25,7 @@ merge-lattice-governor` no resuelve mientras no haya wheel publicado—.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.5.2
+    rev: v0.6.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.5.2
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.0
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -57,11 +57,22 @@ jobs:
 ```
 
 El **RC del gobernador es el RC del paso**: un plan insolvente tumba el check en vez de
-publicarse como verde. Entradas: `holgura-inicial` · `refs` · `base` (por defecto
-`origin/main`) · `repo` (vacío = el workspace) · `ratio` · `banda` · `argumentos` ·
-`salida-json`. Salida `rc` para consumirla en pasos posteriores.
+publicarse como verde. Entradas: `holgura-inicial` (obligatoria cuando hay plan) · `refs` ·
+`base` (por defecto `origin/main`) · `repo` (vacío = el workspace) · `ratio` · `banda` ·
+`lotes` · `argumentos` · `salida-json`. Salida `rc` para consumirla en pasos posteriores.
 
-Se recomienda fijar la etiqueta exacta (`@v0.5.2`). Este repositorio **no** mantiene una
+Con `lotes: "true"` la acción no pide cubeta y publica las **corridas de CI sin choque
+posible** —el ahorro de minutos es el producto—:
+
+```yaml
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.6.0
+        with:
+          lotes: "true"
+          refs: "origin/pr-402 origin/pr-401 origin/pr-403 origin/pr-405"
+          salida-json: artefactos/lotes.json
+```
+
+Se recomienda fijar la etiqueta exacta (`@v0.6.0`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -212,6 +223,85 @@ no el veredicto.
 $ merge-lattice-governor --base origin/main --prescribir --sin-plan --ref origen/rama-a --json
 ```
 
+### Censo completo de la cola: 309 ramas
+
+`--prescribir` sobre las **309 ramas** `origin/worker/*` del corpus (28-Nov-2026, tronco
+`34ee1d2c`, 258 bases distintas, un `diff` por base y por rama — no dos por rama):
+
+| estado | ramas | % |
+|---|---|---|
+| `AL_DIA` | 17 | 5,5 % |
+| `REBASAR_LIBRE` | **224** | **72,5 %** |
+| `REBASAR_CON_RIESGO` | 68 | 22,0 % |
+
+**El 72,5 % de la cola no pide merge-tree: pide un rebase probado.** Las 68 con riesgo se
+concentran en el extremo viejo (2000+ commits atrás), pero **el rezago no es el predictor**:
+
+| rama | atrás | clases en juego |
+|---|---|---|
+| `mac/grafo-js-20261029` | **1793** | **2** |
+| `voz-rebasada-20261121` | 12 | 1 |
+| `cifras-vivas-20261120` | 113 | 5 |
+| `voz-terreno-en-el-repo-20261110` | 496 | 2 |
+
+Mil ochocientos commits de rezago con dos clases contra doce commits con una. Cualquier
+umbral `τ_lag` que declare «reconstruir el diff neto en vez de rebasar» corta el conjunto
+equivocado: **lo que decide es el traslape de clases de rename, no la distancia**.
+
+**Contra el acto real, la muestra grande:** 24 ramas `REBASAR_LIBRE` elegidas una de cada
+nueve por rezago (de 1 a 2000 commits atrás) rebasadas de verdad en un clon desechable:
+**24/24 limpias, 0 conflictos**. Sumado a las 28 del 27-Nov-2026, **52 ramas rebasadas de
+verdad, 52 veredictos del modelo respetados, 0 rutas fuera de las clases declaradas**. Una
+rama 2000 commits atrás rebasa sin conflicto si sus clases no traslapan: el rezago no es
+deuda de merge.
+
+## Lotes: agrupar PRs que conmutan en una sola corrida de CI (`--lotes`)
+
+En un equipo mediano el coste no es el merge: es quemar minutos de CI en serie sobre PRs que
+**algebraicamente conmutan**. `--lotes` colorea el grafo de choque y publica las corridas
+mínimas sin un solo merge:
+
+```console
+$ merge-lattice-governor --base origin/main --lotes --ref rama-a --ref rama-b --ref rama-c
+SUJETO · 5 ramas · tronco origin/main (34ee1d2c)
+LOTES · 2 corrida(s) de CI · soporte por archivo, sin un merge
+  pares 10 · seguros 9 (soporte disjunto) · no seguros 1 (comparten archivo)
+  cota inferior del número de lotes: 2 (ramas que tocan un mismo archivo)
+  lote 1 (4): rb02, rb04, rb05, rb06
+  lote 2 (1): rb07
+  la voraz alcanza la cota inferior: el número de lotes es mínimo
+```
+
+**El álgebra.** Tras rebasar, dos ramas comparten el tronco como **base común**; un merge a
+tres bandas con una sola base no puede chocar entre conjuntos de cambios sobre archivos
+disjuntos. Entonces cada clase de color de un grafo donde la arista es «comparte archivo» es
+un lote que se integra y se prueba entero, sin conflicto. Coste: **un `diff` por rama**, no
+`N(N-1)/2` merges.
+
+**La precondición es el error caro, y está declarada en la salida.** La relación es un
+enunciado sobre merges **post-rebase**. Medida contra parejas **pre-rebase** —cada rama con
+su propia base— publica **40 pares seguros falsos de 105** en la cola del corpus: el choque no
+viene del par, viene de que la rama está atrasada y el tronco le tocó el mismo archivo.
+Reordenar el plan no lo repara; rebasar sí. Es la tercera aparición de la misma forma —deuda
+sin techo, base global frente a `merge-base` por pareja, soporte sin marco—: **una métrica sin
+su marco miente en silencio.**
+
+**Medido sobre el marco correcto** (clon desechable, 28-Nov-2026):
+
+| muestra | pares | seguros → limpios | no seguros → conflicto |
+|---|---|---|---|
+| 15 ramas de la cola, rebasadas | 10 | **9/9** | **1/1** (en el archivo exacto declarado) |
+| 24 ramas `REBASAR_LIBRE`, rebasadas | 276 | **276/276** | — (ninguna comparte archivo) |
+
+**Cotas.** `χ(G) ≥ ω(G)`, y `ω(G) ≥ max_archivo |{ramas que lo tocan}|` —toda rama que toca
+un archivo es adyacente a todas las demás que lo tocan— es exacta y gratis. La coloración
+voraz por grado decreciente da la cota por arriba y **no es mínima**: la coloración exacta es
+NP-dura. Cuando ambas coinciden, la salida lo dice (`el número de lotes es mínimo`).
+
+**Límite declarado:** el soporte es por archivo. Dos ramas que tocan el mismo archivo en
+líneas distintas pueden mergear limpias y cuentan como `NO SEGURAS`. La relación sirve para
+**prometer** lotes, no para descartar pares.
+
 ## Límite del driver: se nombra, no se ejecuta
 
 Un `merge=<driver>` en `.gitattributes` corre dentro del merge real, y este instrumento no
@@ -237,7 +327,7 @@ merge-lattice-governor --repo . --base origin/main --holgura-inicial X \
                        [--ref REF ...] [--ratio R] [--banda B] \
                        [--max-n 18] [--prioridad RAMA=PESO ...] \
                        [--sin-parejas] [--sin-plan] [--sin-optimizar] \
-                       [--prescribir] [--sin-friccion] [--ignorar-driver] \
+                       [--prescribir] [--lotes] [--sin-friccion] [--ignorar-driver] \
                        [--json] [--self-test] [--version]
 ```
 
@@ -370,7 +460,7 @@ Un instrumento honesto dice dónde deja de ver.
 
 ## Salida `--json`
 
-Un solo sobre para los tres modos (plan, matriz sola, rama sola). El consumidor no
+Un solo sobre para los cuatro modos (plan, matriz sola, rama sola, lotes). El consumidor no
 necesita saber en cuál está para leerlo:
 
 | Clave | Tipo | Nota |
@@ -382,6 +472,11 @@ necesita saber en cuál está para leerlo:
 | `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`) y `atribucion` (`TRONCO`/`PAR`/`null`); `ilegibles[]` son motivos completos |
 | `decisiones` | objeto | `{TEOREMA, MEDIDO}`: cuántos pares se decidieron por soporte disjunto sin mergear |
 | `atribucion` | objeto | `{TRONCO, PAR}`: de los pares en conflicto, cuántos se explican por el tronco (reparación: rebasar) |
+| `marco` | string | sólo en `--lotes`: la precondición post-rebase que la relación segura exige, publicada con el número |
+| `lotes[]` | listas de refs | sólo en `--lotes`: cada lista es una corrida de CI sin choque posible |
+| `soportes` | objeto | sólo en `--lotes`: `ref → archivos` del delta, `[]` es medida |
+| `cota_inferior` | entero | sólo en `--lotes`: `ω(G) ≥ max_archivo |{ramas}|`, exacta y gratis |
+| `minimo_probado` | booleano | sólo en `--lotes`: `true` = la voraz alcanzó la cota, el número de lotes es mínimo |
 | `prescripcion` | lista u `null` | el acto por rama `{ref, atras, estado, clases_comunes[], riesgos[]}`; `null` = no pedido con `--prescribir`, `[]` no ocurre (siempre hay al menos una rama) |
 | `duplicados` | objeto | `duplicados_identicos` (pares de `def`) y `parejas_con_duplicados_identicos` (pares de ramas): dos unidades, dos claves |
 | `ilegibles` | lista de rutas | agregado por ruta; `[]` es medida, no ausencia |
@@ -400,7 +495,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.5.2
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.6.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```

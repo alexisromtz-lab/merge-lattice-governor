@@ -108,6 +108,23 @@ class Repo(unittest.TestCase):
         self.assertEqual(por_coma.returncode, 0, por_coma.stderr)
         self.assertEqual(por_espacio.returncode, 0, por_espacio.stderr)
 
+    def test_lotes_no_pide_cubeta_y_agrupa_sin_merge(self) -> None:
+        proc = self.corre(INPUT_HOLGURA="", INPUT_LOTES="true")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("falta el input holgura-inicial", proc.stderr)
+        self.assertIn("LOTES ·", proc.stdout)
+        self.assertIn("precondición: post-rebase", proc.stdout)
+
+    def test_lotes_en_argumentos_tambien_exime_de_la_cubeta(self) -> None:
+        proc = self.corre(INPUT_HOLGURA="", INPUT_ARGUMENTOS="--lotes")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("LOTES ·", proc.stdout)
+
+    def test_sin_cubeta_y_sin_modo_que_la_exima_sigue_siendo_rc_dos(self) -> None:
+        proc = self.corre(INPUT_HOLGURA="", INPUT_ARGUMENTOS="--prioridad a=2")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("falta el input holgura-inicial", proc.stderr)
+
 
 class DeclaracionDeLaAccion(unittest.TestCase):
     """`action.yml` y el cuerpo no pueden declarar contratos distintos.
@@ -137,7 +154,7 @@ class DeclaracionDeLaAccion(unittest.TestCase):
     def test_declara_las_entradas_que_el_cuerpo_lee(self) -> None:
         self.assertEqual(
             self._claves("inputs"),
-            {"holgura-inicial", "refs", "base", "repo", "ratio", "banda", "argumentos",
+            {"holgura-inicial", "refs", "base", "repo", "ratio", "banda", "lotes", "argumentos",
              "salida-json"},
         )
 
