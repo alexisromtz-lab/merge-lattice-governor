@@ -166,6 +166,34 @@ class DiferencialCLI(Base):
         self.assertEqual(json.loads(salida)["decisiones"], {P.TEOREMA: 0, P.MEDIDO: 3})
 
 
+class MatrizEnHilos(Base):
+    """``jobs > 1`` no puede cambiar la matriz: mismo orden, mismos veredictos.
+
+    El diferencial es la prueba de que paralelizar no inventó ninguna medida — si
+    un hilo comparte el oráculo de ``merge-tree`` a medias, aquí se ve.
+    """
+
+    def test_serie_y_hilos_dan_la_misma_matriz(self):
+        self.repo.rama("a", "app.py", APP.replace("v0 = 0", "v0 = 100"))
+        self.repo.rama("b", "otro.py", "x = 1\n")
+        self.repo.rama("c", "app.py", APP.replace("v1 = 1", "v1 = 5"))
+        self.repo.rama("d", "app.py", APP.replace("v1 = 1", "v1 = 9"))
+        refs = ["a", "b", "c", "d"]
+
+        serie = P.matriz(self.repo.path, refs, jobs=1)
+        hilos = P.matriz(self.repo.path, refs, jobs=4)
+        self.assertEqual(len(serie), 6)
+        self.assertEqual(
+            [(p.a, p.b, p.base, p.clase, p.textual, p.decision) for p in serie],
+            [(p.a, p.b, p.base, p.clase, p.textual, p.decision) for p in hilos],
+        )
+        self.assertEqual(P.decisiones(hilos), P.decisiones(serie))
+
+    def test_un_solo_par_no_abre_hilos(self):
+        self.repo.rama("a", "app.py", APP.replace("v0 = 0", "v0 = 100"))
+        self.assertEqual(len(P.matriz(self.repo.path, ["a"], jobs=4)), 0)
+
+
 class ClonParcial(Base):
     """Un clon `--filter=blob:none` sale RC 128: la causa se nombra, no se adivina.
 
@@ -210,6 +238,32 @@ class ClonParcial(Base):
         causa = R._causa_merge_tree(proc, "a", "b")
         self.assertNotIn("clon parcial", causa)
         self.assertIn("not a git repository", causa)
+
+
+class ColisionArchivoDirectorio(Base):
+    """`d` frente a `d/x`: soporte disjunto que **sí** choca (medido 28-Nov-2026)."""
+
+    def test_soporte_disjunto_por_prefijo_no_es_teorema(self):
+        self.repo.rama("a", "dw", "soy archivo\n")
+        self.repo.rama("b", "dw/inner.txt", "soy hijo\n")
+
+        p = P.pareja(self.repo.path, "a", "b")
+        self.assertEqual(p.decision, P.MEDIDO, "el atajo por soporte no puede decidir este par")
+        self.assertEqual(p.clase, P.CONFLICTO_TEXTUAL)
+        self.assertTrue(p.prefijo, "el veredicto debe decir por qué no aplicó el atajo")
+
+        q = P.pareja(self.repo.path, "a", "b", optimizar=False)
+        self.assertEqual(q.clase, p.clase, "el atajo no puede cambiar el veredicto")
+
+    def test_prefijo_que_no_choca_se_mide_igual(self):
+        """Un directorio nuevo a cada lado no es choque: `dw/a` frente a `dw/b` conmuta."""
+        self.repo.rama("a", "dw/a.txt", "a\n")
+        self.repo.rama("b", "dw/b.txt", "b\n")
+
+        p = P.pareja(self.repo.path, "a", "b")
+        self.assertEqual(p.prefijo, (), "compartir directorio no es pelear por el nombre")
+        self.assertEqual(p.decision, P.TEOREMA)
+        self.assertEqual(p.clase, P.CONMUTA_LIMPIO)
 
 
 if __name__ == "__main__":

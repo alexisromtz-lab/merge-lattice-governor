@@ -186,6 +186,20 @@ un teorema medido en vez de una opinión: en la corrida completa, `DECISIÓN` pu
 Corolario que el teorema **no** autoriza: soporte común no implica conflicto. En la misma
 cola, 26 parejas limpias incluyen parejas que tocan el mismo archivo en regiones distintas.
 
+### El borde: archivo frente a directorio
+
+«Soporte disjunto» no basta si se lee como igualdad de rutas. Un archivo `dw` en una rama y
+un archivo `dw/inner.txt` en la otra **no comparten ninguna ruta** y el merge choca igual:
+las dos ramas quieren nombres incompatibles para el mismo prefijo. Medido el 28-Nov-2026 en
+un repositorio sintético: el atajo devolvía `TEOREMA` (conmutan) y `git merge-tree` devolvía
+RC 1 con `CONFLICT (file/directory)` y `dw` desplazado a `dw~<oid>`.
+
+Desde 0.9.0 el atajo exige soporte disjunto **y** ausencia de choque de prefijo, y el
+veredicto publica `prefijo[]` cuando la pareja se midió por esa razón. El mismo predicado
+gobierna `--lotes`: una arista entre `d` y `d/x` dentro de un lote prometido sería un lote
+que no compila. Coste medido en la cola real: `0` parejas con choque de prefijo sobre las
+190 de la muestra, matriz idéntica.
+
 Y el marco importa: el teorema vale contra el **merge-base de la pareja**, no contra el
 tronco. Medido el 25-Nov-2026 en `psf/requests`, 4 de 7 parejas conflictivas tenían soporte
 disjunto *medido contra el tronco* y aun así chocaban — porque lo que chocaba era el lado
@@ -328,6 +342,24 @@ $ merge-lattice-governor --base origin/main --prescribir            # 40 s, 155 
 $ merge-lattice-governor --base origin/main --prescribir --copias   # 209 s, la cota ancha
 ```
 
+### La matriz por parejas es O(N²), y por eso trae hilos (`--jobs`)
+
+`--prescribir` es lineal en llamadas a git: **7,27 s** sobre 62 refs (28-Nov-2026). La
+**matriz por parejas** no: un merge de prueba por par, ≈0,63 s cada uno, medido en un clon
+del corpus con 190 parejas (20 refs) en **114,6 s** de serie. Extrapolado a 62 refs (1 891
+parejas) son ≈20 min: la cifra que hace inútil la herramienta en un CI ajeno.
+
+Lo que se puede abaratar sin tocar el teorema es el factor constante. Cada par es
+independiente y de sólo lectura, así que la matriz corre en hilos: **114,6 s → 46,4 s
+(`--jobs 8`) y 43,8 s (`--jobs 16`)** sobre las mismas 190 parejas, con las 190 filas
+idénticas campo a campo (`clase`, `textual`, `simbolica`, `decision`). Más de 8 hilos no
+mejora: el coste es arrancar procesos, no calcular.
+
+Dos precauciones que el paralelismo exige y que están en el código: el `git init` del oráculo
+y la lectura de `.gitattributes` se hacen **en serie antes** de abrir el pool (son cachés
+perezosas: llenarlas desde dos hilos es una carrera), y el resultado se recoge con
+`pool.map`, que preserva el orden de entrada — la matriz no cambia de orden por paralelizarse.
+
 ### Censo de la cola: la población se declara antes que el porcentaje
 
 `--prescribir` sobre las **309 ramas** `origin/worker/*` del clon desechable (28-Nov-2026, tronco
@@ -398,8 +430,8 @@ mínimas sin un solo merge:
 ```console
 $ merge-lattice-governor --base origin/main --lotes --ref rama-a --ref rama-b --ref rama-c
 SUJETO · 5 ramas · tronco origin/main (34ee1d2c)
-LOTES · 2 corrida(s) de CI · soporte por archivo, sin un merge
-  pares 10 · seguros 9 (soporte disjunto) · no seguros 1 (comparten archivo)
+LOTES · 2 corrida(s) de CI · soporte por archivo o prefijo, sin un merge
+  pares 10 · seguros 9 (soporte disjunto) · no seguros 1 (comparten archivo o se pelean por un nombre)
   cota inferior del número de lotes: 2 (ramas que tocan un mismo archivo)
   lote 1 (4): rb02, rb04, rb05, rb06
   lote 2 (1): rb07
@@ -408,9 +440,10 @@ LOTES · 2 corrida(s) de CI · soporte por archivo, sin un merge
 
 **El álgebra.** Tras rebasar, dos ramas comparten el tronco como **base común**; un merge a
 tres bandas con una sola base no puede chocar entre conjuntos de cambios sobre archivos
-disjuntos. Entonces cada clase de color de un grafo donde la arista es «comparte archivo» es
-un lote que se integra y se prueba entero, sin conflicto. Coste: **un `diff` por rama**, no
-`N(N-1)/2` merges.
+disjuntos —donde «disjuntos» incluye que ninguna ruta sea directorio de la otra: `dw` frente
+a `dw/inner.txt` no comparten ruta y chocan igual—. Entonces cada clase de color de un grafo
+donde la arista es «comparte archivo o prefijo» es un lote que se integra y se prueba entero,
+sin conflicto. Coste: **un `diff` por rama**, no `N(N-1)/2` merges.
 
 **La precondición es el error caro, y está declarada en la salida.** La relación es un
 enunciado sobre merges **post-rebase**. Medida contra parejas **pre-rebase** —cada rama con
@@ -466,7 +499,7 @@ merge-lattice-governor --repo . --base origin/main --holgura-inicial X \
                        [--max-n 18] [--prioridad RAMA=PESO ...] \
                        [--sin-parejas] [--sin-plan] [--sin-optimizar] \
                        [--prescribir] [--lotes] [--sin-friccion] [--ignorar-driver] \
-                       [--json] [--self-test] [--version]
+                       [--jobs N] [--json] [--self-test] [--version]
 ```
 
 `--holgura-inicial` es **obligatoria**: una solvencia sin punto de partida es una ficción.
@@ -507,6 +540,7 @@ vez leería el fallo como que la herramienta no funciona.
 | `--sin-optimizar` | corre el merge también cuando el soporte es disjunto: diferencial del teorema, para auditar el atajo |
 | `--sin-friccion` | no mide el choque de cada rama con el tronco (una menos por rama atrasada) |
 | `--ignorar-driver` | no lee `.gitattributes`: el veredicto es el del merge genérico puro — aproximación declarada, no medida |
+| `--jobs N` | hilos de la matriz por parejas (`0` = auto, tope 8; `1` = serie). El orden de la matriz no cambia |
 
 ## Ejemplo real
 
@@ -607,7 +641,7 @@ necesita saber en cuál está para leerlo:
 | `criterio` | string | qué se maximizó; sin `--prioridad` se dice que todas pesan 1 |
 | `holgura_inicial` | número o `null` | `null` = `NO_MEDIDO`, nunca `0` |
 | `ramas[]` | objetos | `arnes`/`vivo`/`sim`/`delta_holgura` valen `null` sin masa; `friccion_con_tronco` es `[]` (medido y limpio) o `null` (no medido, con `--sin-friccion`) |
-| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`) y `atribucion` (`TRONCO`/`PAR`/`null`); `ilegibles[]` son motivos completos |
+| `parejas[]` | objetos | `clase` + testigos (`simbolica`, `textual`, `identicos`) + `driver` (rutas con `merge=`), `decision` (`TEOREMA`/`MEDIDO`), `atribucion` (`TRONCO`/`PAR`/`null`) y `prefijo[]` (pares `directorio · ruta` que impidieron el atajo por choque archivo/directorio, vacío en el caso normal); `ilegibles[]` son motivos completos |
 | `decisiones` | objeto | `{TEOREMA, MEDIDO}`: cuántos pares se decidieron por soporte disjunto sin mergear |
 | `atribucion` | objeto | `{TRONCO, PAR}`: de los pares en conflicto, cuántos se explican por el tronco (reparación: rebasar) |
 | `marco` | string | sólo en `--lotes`: la precondición post-rebase que la relación segura exige, publicada con el número |
