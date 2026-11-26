@@ -8,6 +8,7 @@ global para N ramas de un mismo tronco inventa conflictos que no existen
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from itertools import combinations
 
@@ -47,6 +48,7 @@ class Pareja:
     ilegibles: tuple[str, ...] = ()
     identicos: tuple[str, ...] = ()
     driver: tuple[str, ...] = ()
+    prefijo: tuple[str, ...] = ()
     decision: str = MEDIDO
     atribucion: str | None = None
 
@@ -83,6 +85,8 @@ class Pareja:
                 texto += " · PAR: el choque no viene del tronco, el orden no lo repara"
             if self.driver:
                 texto += f" · además driver: {', '.join(self.driver)}"
+            if self.prefijo:
+                texto += f" · archivo/directorio: {', '.join(self.prefijo)}"
             return texto
         if self.clase == COLISION_SIMBOLICA_AST:
             return f"{self.clase}: {', '.join(self.simbolica)}"
@@ -146,9 +150,11 @@ def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = 
 
     Teorema (soporte disjunto): con una sola base común, dos conjuntos de cambios
     que no tocan ningún archivo en común no pueden chocar — el merge es su unión.
-    Cuando el soporte es disjunto no hay merge que correr: la decisión es
-    ``TEOREMA``. Es exacto, no un atajo: `--sin-optimizar` corre el merge igual y
-    tiene que dar el mismo veredicto (test diferencial).
+    La condición es soporte disjunto **y** sin choque archivo/directorio: ``d``
+    frente a ``d/x`` no comparte rutas y choca igual. Cuando se cumple, no hay
+    merge que correr: la decisión es ``TEOREMA``. Es exacto, no un atajo:
+    `--sin-optimizar` corre el merge igual y tiene que dar el mismo veredicto
+    (test diferencial, incluido el caso archivo/directorio).
 
     ``driver=False`` ignora ``.gitattributes``: el veredicto es entonces el del
     merge genérico puro, que es una aproximación declarada, nunca la verdad.
@@ -157,8 +163,10 @@ def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = 
     if base is None:
         return Pareja(a=a, b=b, base=None)
     soporte_a = {r for r in R.rutas(repo, base, a)}
-    comunes = sorted(soporte_a & {r for r in R.rutas(repo, base, b)})
-    if optimizar and not comunes:
+    soporte_b = {r for r in R.rutas(repo, base, b)}
+    comunes = sorted(soporte_a & soporte_b)
+    prefijo = R.prefijos_en_choque(soporte_a, soporte_b)
+    if optimizar and not comunes and not prefijo:
         return Pareja(a=a, b=b, base=base, decision=TEOREMA)
     simbolica, ilegibles, iguales = _simbolicas(
         repo, a, b, base, [r for r in comunes if r.endswith(".py")]
@@ -181,6 +189,7 @@ def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = 
         ilegibles=ilegibles,
         identicos=iguales,
         driver=decididas,
+        prefijo=prefijo,
         decision=MEDIDO,
     )
 
@@ -246,12 +255,41 @@ def sola(repo: str, tronco: str, ref: str) -> tuple[str, ...]:
     return tuple(hallazgos)
 
 
+def _preparar_hilos(repo: str, refs: list[str], driver: bool) -> None:
+    """Deja hecho todo lo que escribe estado compartido, antes de abrir hilos.
+
+    Dos cosas: el oráculo de ``merge-tree`` (un ``git init`` por sujeto) y la caché
+    de ``.gitattributes``. Ambas son diccionarios de módulo que se llenan perezosos;
+    rellenarlos dentro del pool es una carrera, no una optimización.
+    """
+    R.preparar(repo)
+    if driver:
+        for ref in refs:
+            _reglas_de(repo, ref)
+
+
 def matriz(repo: str, refs: list[str], *, optimizar: bool = True,
-           driver: bool = True) -> list[Pareja]:
-    return [
-        pareja(repo, a, b, optimizar=optimizar, driver=driver)
-        for a, b in combinations(refs, 2)
-    ]
+           driver: bool = True, jobs: int = 1) -> list[Pareja]:
+    """Los ``N(N-1)/2`` pares. ``jobs > 1`` los reparte entre hilos.
+
+    Cada par es **independiente y de sólo lectura** —su base es la de la pareja, no
+    una global—, así que repartirlos no cambia un solo veredicto: el orden de la
+    lista de salida es el de ``combinations``, no el de terminación. Un atajo que
+    alterase la matriz no sería velocidad, sería otra medida.
+    """
+    pares = list(combinations(refs, 2))
+    if jobs <= 1 or len(pares) < 2:
+        return [
+            pareja(repo, a, b, optimizar=optimizar, driver=driver) for a, b in pares
+        ]
+    _preparar_hilos(repo, refs, driver)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        return list(
+            pool.map(
+                lambda par: pareja(repo, par[0], par[1], optimizar=optimizar, driver=driver),
+                pares,
+            )
+        )
 
 
 def resumen(parejas: list[Pareja]) -> dict[str, int]:

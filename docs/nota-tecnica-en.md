@@ -177,20 +177,45 @@ The displacement itself was paid down too: two `git rev-list --count` calls beca
 ## 7. Batching: the same law one level up
 
 After rebasing, all branches share the trunk as a **single common base**, and a three-way merge
-with one base cannot conflict between change sets on disjoint files. So the graph whose edge is
-"shares a path" colour-classes into batches that can be merged *and tested* in one CI run, at
-the cost of one `diff` per branch instead of `N(N−1)/2` merges.
+with one base cannot conflict between change sets on disjoint files — **provided "disjoint"
+means no path is a directory prefix of another**. A file `dw` on one side and `dw/inner.txt`
+on the other share no path at all and still collide: both branches want incompatible names for
+the same prefix, and `git merge-tree` reports `CONFLICT (file/directory)`. Measured on a
+synthetic repository (2026-11-28): the pure-equality shortcut decided `TEOREMA` (commutes)
+while the real merge returned RC 1 with `dw` displaced to `dw~<oid>`. Since v0.9.0 the edge is
+"shares a path **or** gives one path as a directory of the other", which is the predicate the
+batch guarantee always needed.
+
+So the graph whose edge is "shares a path (or a path prefix)" colour-classes into batches that
+can be merged *and tested* in one CI run, at the cost of one `diff` per branch instead of
+`N(N−1)/2` merges.
 
 The precondition is the expensive part, and it is printed in the output: the relation is a
 statement about **post-rebase** merges. Measured against **pre-rebase** pairs — each branch
 carrying its own base — it publishes **40 false "safe" pairs out of 105** on the 15-branch
 queue, because the collision is with the trunk, not with the other PR.
 
+### The pairwise matrix is quadratic; threads buy the constant
+
+`--prescribir` is linear in git calls: **7.27 s** over 62 refs. The **pairwise matrix** is not:
+one trial merge per pair at **≈0.63 s**, measured on a corpus clone — 190 pairs (20 refs) in
+**114.6 s** serially. Extrapolated to 62 refs (1 891 pairs) that is ≈20 min, which is the
+number that makes the tool useless inside someone else's CI.
+
+No theorem removes that cost here (the disjoint-support shortcut only prunes 38 % of pairs
+when branches share hot files), but the constant is free to attack: a pair is read-only and
+independent, so the matrix runs on threads — **114.6 s → 46.4 s** (`--jobs 8`) and **43.8 s**
+(`--jobs 16`) over the same 190 pairs, with all 190 rows identical field by field (`clase`,
+`textual`, `simbolica`, `decision`). Beyond 8 threads it stops improving: the cost is spawning
+git, not computing. The two mutations that would race are pre-filled serially before the pool
+opens (the oracle's `git init` and the `.gitattributes` cache), and `pool.map` keeps the input
+order, so the matrix order does not depend on the thread count.
+
 ## 8. Reproducibility
 
 ```bash
 git clone https://github.com/alexisromtz-lab/merge-lattice-governor && cd merge-lattice-governor
-python3 -m unittest discover -s tests -t .          # 138 tests, zero dependencies
+python3 -m unittest discover -s tests -t .          # 147 tests, zero dependencies
 
 # the act each branch asks for, without reading a blob
 merge-lattice-governor --base origin/main --prescribir --sin-plan --ref origin/branch-a

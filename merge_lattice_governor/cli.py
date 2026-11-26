@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Sequence
 
@@ -41,6 +42,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--banda", type=float, default=BANDA_TECHO)
     p.add_argument("--max-n", type=int, default=MAXIMO_EXACTO, help="cota del DP exacto")
     p.add_argument("--sin-parejas", action="store_true", help="omite la matriz (N² merges de lectura)")
+    p.add_argument(
+        "--jobs",
+        type=int,
+        default=0,
+        help="hilos para la matriz de parejas (0 = auto, acotado a 8; 1 = serie)",
+    )
     p.add_argument(
         "--sin-plan",
         action="store_true",
@@ -88,6 +95,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--version", action="version", version=f"merge-lattice-governor {__version__}")
     return p
+
+
+def _hilos(jobs: int) -> int:
+    """Hilos efectivos: ``0`` es auto y no promete más de lo que la máquina da."""
+    if jobs and jobs > 0:
+        return jobs
+    return max(1, min(8, os.cpu_count() or 1))
 
 
 def _intocables(ramas: list, matriz: list) -> dict[int, int]:
@@ -292,6 +306,7 @@ def _parejas_json(matriz: Sequence[P.Pareja]) -> list[dict]:
          "textual": list(p.textual), "simbolica": list(p.simbolica),
          "identicos": list(p.identicos), "ilegibles": list(p.ilegibles),
          "driver": list(p.driver), "decision": p.decision,
+         "prefijo": list(p.prefijo),
          "atribucion": p.atribucion}
         for p in matriz
     ]
@@ -573,6 +588,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.repo, args.ref,
                 optimizar=not args.sin_optimizar,
                 driver=not args.ignorar_driver,
+                jobs=_hilos(args.jobs),
             )
             if not args.sin_friccion:
                 fric = P.fricciones(args.repo, args.base, args.ref)

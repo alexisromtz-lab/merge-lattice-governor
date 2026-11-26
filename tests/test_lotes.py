@@ -62,6 +62,16 @@ class ElGrafoDeChoque(unittest.TestCase):
         grupos = L.colorear(L.choques(sop))
         self.assertEqual(len(grupos), 2)
 
+    def test_archivo_frente_a_directorio_tambien_es_arista(self) -> None:
+        """`dw` y `dw/inner.txt` no comparten ruta y chocan: no caben en el mismo lote."""
+        sop = {"a": ("dw",), "b": ("dw/inner.txt",), "c": ("otro.py",)}
+        grafo = L.choques(sop)
+        self.assertEqual(grafo["a"], {"b"})
+        self.assertEqual(grafo["c"], set())
+        grupos = L.colorear(grafo)
+        for grupo in grupos:
+            self.assertFalse({"a", "b"} <= set(grupo))
+
 
 class ElLoteDeclaradoSeguroIntegraLimpio(unittest.TestCase):
     """El acto, no la predicción: se mergea el lote y se mira si choca."""

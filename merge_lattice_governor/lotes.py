@@ -82,18 +82,34 @@ def soportes(repo: str, tronco: str, refs: list[str]) -> dict[str, tuple[str, ..
 
 
 def choques(sop: dict[str, tuple[str, ...]]) -> dict[str, set[str]]:
-    """Grafo de choque: arista entre dos ramas que comparten al menos un archivo."""
+    """Grafo de choque: arista entre dos ramas que comparten un archivo o un prefijo.
+
+    Compartir archivo es la arista evidente. La segunda es ``d`` frente a ``d/x``:
+    sin ninguna ruta en común, el merge de esas dos ramas choca porque se pelean
+    por el nombre ``d`` (medido: ``git merge-tree`` da ``CONFLICT
+    (file/directory)``). Prometer un lote con esa pareja dentro es prometer un
+    lote que no compila, así que también es arista.
+    """
     por_archivo: dict[str, list[str]] = {}
     for ref, rutas in sop.items():
         for ruta in rutas:
             por_archivo.setdefault(ruta, []).append(ref)
     grafo: dict[str, set[str]] = {ref: set() for ref in sop}
+
+    def une(a: str, b: str) -> None:
+        if a != b:
+            grafo[a].add(b)
+            grafo[b].add(a)
+
     for lista in por_archivo.values():
         for i, a in enumerate(lista):
             for b in lista[i + 1 :]:
-                if a != b:
-                    grafo[a].add(b)
-                    grafo[b].add(a)
+                une(a, b)
+    for ref, rutas in sop.items():
+        for ruta in rutas:
+            for directorio in R.ancestros(ruta):
+                for otro in por_archivo.get(directorio, ()):
+                    une(ref, otro)
     return grafo
 
 
@@ -143,9 +159,9 @@ def texto(l: Lotes, tronco: str, oid: str = "") -> str:
         cabecera += f" ({oid})"
     lineas = [
         cabecera,
-        f"LOTES · {len(l.lotes)} corrida(s) de CI · soporte por archivo, sin un merge",
+        f"LOTES · {len(l.lotes)} corrida(s) de CI · soporte por archivo o prefijo, sin un merge",
         f"  pares {l.pares} · seguros {l.pares_seguros} (soporte disjunto) · "
-        f"no seguros {l.pares_no_seguros} (comparten archivo)",
+        f"no seguros {l.pares_no_seguros} (comparten archivo o se pelean por un nombre)",
         f"  cota inferior del número de lotes: {l.cota_inferior} "
         "(ramas que tocan un mismo archivo)",
     ]

@@ -61,6 +61,40 @@ def rutas(repo: str, base: str, ref: str) -> list[str]:
     return [linea for linea in salida.splitlines() if linea]
 
 
+def ancestros(ruta: str):
+    """Directorios de ``ruta``, de fuera adentro: ``a/b/c`` → ``a``, ``a/b``."""
+    partes = ruta.split("/")
+    for i in range(1, len(partes)):
+        yield "/".join(partes[:i])
+
+
+def prefijos_en_choque(a, b) -> tuple[str, ...]:
+    """Choques **archivo/directorio** entre dos soportes disjuntos por igualdad.
+
+    Soporte disjunto no basta para prometer conmutatividad: un archivo ``d`` y un
+    archivo ``d/x`` no comparten ninguna ruta y aun así el merge choca, porque las
+    dos ramas quieren nombres distintos para ``d``. Medido el 28-Nov-2026 en un
+    repositorio sintético: el atajo por soporte devolvía ``TEOREMA`` y el merge
+    real devolvía RC 1 con ``d`` desplazado a ``d~<oid>``.
+
+    Devuelve pares ``directorio · ruta`` para que el veredicto pueda decir por qué
+    no aplicó el atajo. El predicado es simétrico y sólo mira prefijos: no decide
+    si el par choca, decide si el soporte basta para **prometer** que no choca.
+    Un falso positivo aquí cuesta un merge; un falso negativo, un lote roto.
+    """
+    sa, sb = set(a), set(b)
+    choques: set[str] = set()
+    for ruta in sb:
+        for directorio in ancestros(ruta):
+            if directorio in sa:
+                choques.add(f"{directorio} · {ruta}")
+    for ruta in sa:
+        for directorio in ancestros(ruta):
+            if directorio in sb:
+                choques.add(f"{directorio} · {ruta}")
+    return tuple(sorted(choques))
+
+
 def leer(repo: str, ref: str, ruta: str) -> str | None:
     proceso = git(repo, "show", f"{ref}:{ruta}")
     return proceso.stdout if proceso.returncode == 0 else None
@@ -120,6 +154,17 @@ def _oraculo(repo: str) -> str:
     atexit.register(shutil.rmtree, raiz, True)
     _ORACULOS[odm] = raiz
     return raiz
+
+
+def preparar(repo: str) -> str:
+    """Crea el oráculo de lectura **antes** de paralelizar.
+
+    Dos hilos que pidan el oráculo a la vez compiten por el mismo ``tempfile.mkdtemp``
+    y el segundo escribe en un ODB a medias. Se construye una vez, en serie, y a
+    partir de ahí ``merge-tree`` sólo escribe objetos con nombre por contenido:
+    concurrente es seguro. El coste es un ``git init`` por sujeto.
+    """
+    return _oraculo(repo)
 
 
 def _es_superficial(repo: str) -> bool:
