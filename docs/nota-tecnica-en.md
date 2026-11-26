@@ -1,6 +1,6 @@
 # Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs
 
-**Technical note · 2026-11-28 · version 1.1 · DOI [10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464)**
+**Technical note · 2026-11-26 · version 1.1 · DOI [10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464)**
 Companion to `merge-lattice-governor` v0.7.0 (`0e4c38a`), `composicion-core`,
 `py-test-shadow-guard`. All numbers were produced by the commands in §7 on a disposable clone;
 no figure in this note is an estimate.
@@ -205,4 +205,6 @@ Cite as:
 
 `24548463` is the **concept** DOI: it resolves to the latest version and stays stable across
 deposits. Each version also carries its own DOI; v1.0 is `24548464`, v1.1 is the record that
-supersedes it.
+supersedes it. The v1.0 record declares `2026-11-28`, a date ahead of this revision; recorded
+dates are republished as they were recorded rather than corrected in silence, so this revision
+declares the date of its own measurement.
