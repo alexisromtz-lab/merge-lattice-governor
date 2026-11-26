@@ -39,6 +39,12 @@ include = ["merge_lattice_governor*"]
 # la suite (que concentra el 55.6 % del grafo porque una suite densa importa a
 # propósito) y el detector de ciclos sigue midiendo dentro de `tests/` y a través
 # de la frontera. El universo medido se publica en cada corrida.
+#
+# Límite del mecanismo, medido: `puertas` aporta trazabilidad, no autoridad. Un
+# módulo interno con 90.0 % de conectividad sale RC 1 como barrel y RC 0 si se
+# declara aquí, sin que el escáner pueda distinguir los dos casos. Por eso cada
+# puerta de abajo cita la cláusula que la hace puerta, y esa cita es lo que
+# revisa una persona en el diff.
 [tool.platino-scan]
 pruebas = ["tests"]
 # Las tres puertas lo son por contrato, no por conveniencia: `cli.py` es el
