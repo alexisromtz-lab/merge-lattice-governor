@@ -246,7 +246,7 @@ por rama van con marcadores porque son 62.
 
 ### Censo de la cola: la población se declara antes que el porcentaje
 
-`--prescribir` sobre las **309 ramas** `origin/worker/*` del corpus (28-Nov-2026, tronco
+`--prescribir` sobre las **309 ramas** `origin/worker/*` del clon desechable (28-Nov-2026, tronco
 `34ee1d2c`, 258 bases distintas, un `diff` por base y por rama — no dos por rama) dio
 `AL_DIA` 17 · `REBASAR_LIBRE` 224 · `REBASAR_CON_RIESGO` 68. **Ese 72,5 % era un artefacto
 de población, y esta sección lo corrige.** De las 275 refs locales, **213 ya están contenidas
@@ -259,6 +259,14 @@ por no tener nada que reaplicar y entraban como `REBASAR_LIBRE`. La población v
 | `AL_DIA` | 7 | 7 |
 | `REBASAR_LIBRE` | **215** | **2** |
 | `REBASAR_CON_RIESGO` | 53 | 53 |
+
+**Dos poblaciones, no una.** El censo publicado en v0.6.0 enumeró **309** refs en el clon
+desechable —34 más de las 275 que el árbol de trabajo tiene cargadas— y dio `AL_DIA` 17 ·
+`REBASAR_LIBRE` 224 · `REBASAR_CON_RIESGO` 68. En **ese** marco las contenidas en el tronco son
+**218** (`rev-list --count tronco..ref == 0`, medido): v0.6.1 las publica como `SIN_TRABAJO`,
+`REBASAR_LIBRE` baja a **6** y quedan **91** vivas. La tabla de arriba es el marco del árbol de
+trabajo (275 · 213 · 62) y es la que se rebasó de verdad. Las dos cuentas son correctas y nombran
+poblaciones distintas; publicar una sola «la» cifra era el defecto.
 
 **Contra el acto real, con la población declarada** (62 ramas vivas, clon desechable,
 `git rebase --rebase-merges` sobre `34ee1d2c8`):
