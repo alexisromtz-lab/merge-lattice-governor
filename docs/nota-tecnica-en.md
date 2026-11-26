@@ -1,7 +1,7 @@
 # Algebraic Merge Queues: bounding Git rebase conflicts without reading blobs
 
-**Technical note · 2026-11-28 · version 1.0 · DOI [10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464)**
-Companion to `merge-lattice-governor` v0.6.1 (`a25de3f`), `composicion-core`,
+**Technical note · 2026-11-28 · version 1.1 · DOI [10.5281/zenodo.24548464](https://doi.org/10.5281/zenodo.24548464)**
+Companion to `merge-lattice-governor` v0.7.0 (`0e4c38a`), `composicion-core`,
 `py-test-shadow-guard`. All numbers were produced by the commands in §7 on a disposable clone;
 no figure in this note is an estimate.
 
@@ -14,9 +14,12 @@ branches? We show that the expensive part is decidable *before* any merge, from 
 alone, by comparing **rename classes** instead of file names. On a live queue of 62 branches
 against a real trunk, the prescription had **9/9 correct "no risk" verdicts, zero false
 safes**, and its 46 predicted conflicts materialised on **109 paths of which 1 (0.9%) fell
-outside the declared classes**. We then report two ways the same measurement lied while looking
-healthy: a denominator that named a dead population, and an instrument (`git rebase` without
-`--rebase-merges`) whose flattening fabricates conflicts the repository does not have.
+outside the declared classes**. We then report three ways the same measurement lied while looking
+healthy: a denominator that named a dead population, an instrument (`git rebase` without
+`--rebase-merges`) whose flattening fabricates conflicts the repository does not have, and — the
+sharpest — a bound computed over the net diff whose act replays the commit graph. Removing a git
+flag that cost 32× per diff changed 0 of 137 verdicts and covered 0 of the 67 conflict paths that
+22 real rebases produced.
 
 ## 1. The question and its cost
 
@@ -101,7 +104,40 @@ contains. Re-run with `--rebase-merges`: `rc=0`, zero unmerged paths, on exactly
 branches and no other change in 62. A conflict that no merge would ever produce is not a
 property of the repository.
 
-## 6. Batching: the same law one level up
+## 6. Third trap: the bound and the act were not functions of the same object
+
+The prescription was slow — 561 s over 155 live branches — and the profile named one git flag:
+`--find-copies-harder` in the rename detection, 3 283 ms per diff against 101 ms without it. We
+removed it and then measured what it had been buying.
+
+Same 155 live branches (`git rev-list --count T..B > 0`), same binary, same cache: **561 s → 40 s**
+(209 s with the flag restored), and **0 of 137 verdicts changed** — `AL_DIA 18 · REBASAR_LIBRE 9 ·
+REBASAR_CON_RIESGO 128` in both runs, the flagged run reproducing the previous release's output
+byte for byte. What does move is the class list of **22 of the 137** branches, which narrows: a
+copy only the flag could see had been entering the rename class as if it were an edge.
+
+Whether that narrowing costs coverage is not a reasoning question. We rebased those 22 for real
+(`git rebase --rebase-merges` onto the measured trunk, `--shared` clone): all 22 conflict, **67
+paths** in conflict. Inside the wide bound: **3**. Inside the narrow bound: **the same 3**. Paths
+covered only by the wide bound: **0**. The flag bought 5.2× of wall clock for zero coverage; it
+survives as an explicit opt-in.
+
+The three paths the bound cannot see are the load-bearing part, because they are exactly the paths
+a *net diff* cannot see either:
+
+> The prescription is a function of the net diff `base..ref`; the act replays the commit graph.
+> Every path where the two disagree is a path present in `git log --name-only` and absent from
+> `git diff --name-only` — a file created and deleted inside the branch — or a conflict that only
+> exists inside a merge the replay re-executes.
+
+This is the sharpest frame error in the note: the bound and the act were never measuring the same
+object. It also explains why `REBASAR_LIBRE` remains a proof — no commit to replay means no path to
+see — while a `REBASAR_CON_RIESGO` list is what *may* collide, never what will.
+
+The displacement itself was paid down too: two `git rev-list --count` calls became one
+`--left-right --count`, **57 ms against 228 ms**, identical field by field.
+
+## 7. Batching: the same law one level up
 
 After rebasing, all branches share the trunk as a **single common base**, and a three-way merge
 with one base cannot conflict between change sets on disjoint files. So the graph whose edge is
@@ -113,11 +149,11 @@ statement about **post-rebase** merges. Measured against **pre-rebase** pairs �
 carrying its own base — it publishes **40 false "safe" pairs out of 105** on the 15-branch
 queue, because the collision is with the trunk, not with the other PR.
 
-## 7. Reproducibility
+## 8. Reproducibility
 
 ```bash
 git clone https://github.com/alexisromtz-lab/merge-lattice-governor && cd merge-lattice-governor
-python3 -m unittest discover -s tests -t .          # 131 tests, zero dependencies
+python3 -m unittest discover -s tests -t .          # 138 tests, zero dependencies
 
 # the act each branch asks for, without reading a blob
 merge-lattice-governor --base origin/main --prescribir --sin-plan --ref origin/branch-a
@@ -129,7 +165,7 @@ merge-lattice-governor --base origin/main --lotes --ref a --ref b --ref c
 The rebase census itself is a `git rebase --rebase-merges <trunk>` loop in a disposable clone
 (`git clone --shared`), recording `rc` and `git diff --name-only --diff-filter=U`.
 
-## 8. Limits, stated
+## 9. Limits, stated
 
 - The law is a **bound**, and it is per path, not per hunk: two branches touching the same file
   on different lines merge clean but are counted unsafe.
@@ -140,13 +176,13 @@ The rebase census itself is a `git rebase --rebase-merges <trunk>` loop in a dis
 - Percentages in this note name their population; where the population changed, both numbers are
   published rather than the survivor.
 
-## 9. What generalises
+## 10. What generalises
 
 The transferable object is not the tool but the check: *every metric must publish the frame it
 was measured in* — the external ceiling of a debt ratio, the per-pair merge base of a support
-relation, the rebase precondition of a batching relation, and the population of a percentage.
-Four occurrences of one family in a single codebase, each found by measuring rather than
-reasoning.
+relation, the rebase precondition of a batching relation, the population of a percentage, and a
+bound and an act that were not functions of the same object. Five occurrences of one family in a
+single codebase, each found by measuring rather than reasoning.
 
 ## Licence and code
 
@@ -165,4 +201,8 @@ version of the deposit rather than an edit of this one.
 Cite as:
 
 > Román Martínez, J. A. (2026). *Algebraic Merge Queues: bounding Git rebase conflicts without
-> reading blobs* (version 1.0). Zenodo. https://doi.org/10.5281/zenodo.24548464
+> reading blobs* (version 1.1). Zenodo. https://doi.org/10.5281/zenodo.24548463
+
+`24548463` is the **concept** DOI: it resolves to the latest version and stays stable across
+deposits. Each version also carries its own DOI; v1.0 is `24548464`, v1.1 is the record that
+supersedes it.
