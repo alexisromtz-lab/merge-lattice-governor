@@ -16,6 +16,16 @@ jobs:
       - run: python -m unittest discover -s tests -t . -v
       - run: python -m merge_lattice_governor --self-test
 
+  # Job aparte a propósito: la frontera arquitectónica es un sujeto distinto del binario.
+  # Si el escáner cae, el job se pone rojo y el de tests no miente sobre lo que mide.
+  # Versión fijada: un escáner que cambia solo mueve el veredicto sin que nadie lo decida.
+  arquitectura:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx --from platino-scan==1.5.3 platino-scan .
+
   # La acción compuesta se ejercita en el CI del propio repositorio: un `action.yml` que
   # sólo se prueba a mano envejece hasta mentir. Este job monta un sujeto de tres ramas y
   # exige RC 0 solvente y RC 1 insolvente.

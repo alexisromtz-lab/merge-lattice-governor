@@ -847,6 +847,16 @@ que el juez no puede puntuar un aviso donde no hay dónde emitirlo. Es una front
 contrato declarada, no una discrepancia escondida; los otros tres huecos (rama sola,
 `NO_MEDIDO`, duplicado interno) se cerraron en 0.1.2 y el juez los puntúa.
 
+La **arquitectura del propio paquete** la certifica su herramienta hermana en CI, en un job
+aparte para que un escáner caído no se confunda con un test rojo:
+
+```yaml
+- run: uvx --from platino-scan==1.5.3 platino-scan .
+```
+
+Medido el 28-Nov-2026 sobre `main`: `ARQUITECTURA SANA`, RC 0 — 18 archivos de producto, 9 de
+pruebas, dos puertas declaradas por encima del umbral.
+
 ## La nota técnica — la ley, medida y con DOI
 
 La ley de este paquete (clases de rename ⇒ cota de conflictos de rebase) está publicada como
