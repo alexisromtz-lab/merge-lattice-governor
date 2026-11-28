@@ -47,6 +47,7 @@ class Pareja:
     simbolica: tuple[str, ...] = ()
     ilegibles: tuple[str, ...] = ()
     identicos: tuple[str, ...] = ()
+    idempotentes: tuple[str, ...] = ()
     driver: tuple[str, ...] = ()
     prefijo: tuple[str, ...] = ()
     decision: str = MEDIDO
@@ -99,6 +100,11 @@ class Pareja:
             return f"{self.clase}: {', '.join(self.ilegibles)}"
         if self.identicos:
             return f"{self.clase} · {len(self.identicos)} duplicado(s) idéntico(s), ninguno se pierde"
+        if self.idempotentes:
+            return (
+                f"{self.clase} · idempotente en {len(self.idempotentes)} ruta(s): "
+                "misma firma (modo, blob) en las dos ramas"
+            )
         return self.clase
 
 
@@ -145,6 +151,15 @@ def _testigo(ruta: str, metodo: Metodo, ref: str) -> str:
     return f"{ruta}:{metodo.linea}@{corto} {metodo.rotulo()}"
 
 
+def _idempotentes(repo: str, a: str, b: str, comunes: list[str]) -> tuple[str, ...]:
+    """Rutas donde las dos ramas dejan **la misma** firma ``(modo, blob)``.
+
+    Dos borrados cuentan como la misma firma: si las dos ramas coinciden en que
+    la ruta desaparece, el merge no tiene nada que elegir.
+    """
+    return tuple(r for r in comunes if R.firma(repo, a, r) == R.firma(repo, b, r))
+
+
 def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = True) -> Pareja:
     """Un par, con su base **de pareja** y el veredicto de un merge a tres bandas.
 
@@ -152,9 +167,16 @@ def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = 
     que no tocan ningún archivo en común no pueden chocar — el merge es su unión.
     La condición es soporte disjunto **y** sin choque archivo/directorio: ``d``
     frente a ``d/x`` no comparte rutas y choca igual. Cuando se cumple, no hay
-    merge que correr: la decisión es ``TEOREMA``. Es exacto, no un atajo:
-    `--sin-optimizar` corre el merge igual y tiene que dar el mismo veredicto
-    (test diferencial, incluido el caso archivo/directorio).
+    merge que correr: la decisión es ``TEOREMA``.
+
+    Segunda poda (idempotencia): con soporte común, si **cada** ruta común queda
+    con la misma firma ``(modo, blob)`` en las dos ramas, las dos ramas piden el
+    mismo estado y el merge es ``x ⊔ x = x``. Basta la igualdad de bytes, no de
+    modo: mismos bytes con modo distinto chocan.
+
+    Las dos podas son exactas, no atajos: `--sin-optimizar` corre el merge igual
+    y tiene que dar el mismo veredicto (test diferencial, con archivo/directorio
+    y con el par modo/blob).
 
     ``driver=False`` ignora ``.gitattributes``: el veredicto es entonces el del
     merge genérico puro, que es una aproximación declarada, nunca la verdad.
@@ -166,8 +188,25 @@ def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = 
     soporte_b = {r for r in R.rutas(repo, base, b)}
     comunes = sorted(soporte_a & soporte_b)
     prefijo = R.prefijos_en_choque(soporte_a, soporte_b)
-    if optimizar and not comunes and not prefijo:
-        return Pareja(a=a, b=b, base=base, decision=TEOREMA)
+    idempotentes: tuple[str, ...] = ()
+    if optimizar and not prefijo:
+        if not comunes:
+            return Pareja(a=a, b=b, base=base, decision=TEOREMA)
+        idempotentes = _idempotentes(repo, a, b, comunes)
+        if len(idempotentes) == len(comunes):
+            # Bytes idénticos no pueden colisionar entre sí: la colisión simbólica
+            # se mide igual, porque ``0`` ahí significa mirado, no ausente.
+            _, _, iguales = _simbolicas(
+                repo, a, b, base, [r for r in comunes if r.endswith(".py")]
+            )
+            return Pareja(
+                a=a,
+                b=b,
+                base=base,
+                identicos=iguales,
+                idempotentes=idempotentes,
+                decision=TEOREMA,
+            )
     simbolica, ilegibles, iguales = _simbolicas(
         repo, a, b, base, [r for r in comunes if r.endswith(".py")]
     )
@@ -188,6 +227,7 @@ def pareja(repo: str, a: str, b: str, *, optimizar: bool = True, driver: bool = 
         simbolica=simbolica,
         ilegibles=ilegibles,
         identicos=iguales,
+        idempotentes=idempotentes,
         driver=decididas,
         prefijo=prefijo,
         decision=MEDIDO,
@@ -338,6 +378,19 @@ def duplicados(parejas: list[Pareja]) -> dict[str, int]:
     return {
         "duplicados_identicos": sum(len(p.identicos) for p in parejas),
         "parejas_con_duplicados_identicos": len(con),
+    }
+
+
+def idempotentes(parejas: list[Pareja]) -> dict[str, int]:
+    """Rutas que las dos ramas dejan con la misma firma ``(modo, blob)``.
+
+    Aparte de ``resumen`` por la misma razón que ``duplicados``: la unidad son
+    rutas, no parejas de ramas.
+    """
+    con = [p for p in parejas if p.idempotentes]
+    return {
+        "rutas_idempotentes": sum(len(p.idempotentes) for p in parejas),
+        "parejas_idempotentes": len(con),
     }
 
 

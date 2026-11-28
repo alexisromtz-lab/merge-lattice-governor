@@ -100,6 +100,26 @@ def leer(repo: str, ref: str, ruta: str) -> str | None:
     return proceso.stdout if proceso.returncode == 0 else None
 
 
+def firma(repo: str, ref: str, ruta: str) -> tuple[str, str] | None:
+    """Firma ``(modo, blob)`` de ``ruta`` en ``ref``; ``None`` si ahí no existe.
+
+    El modo entra en la firma porque Git lo compara. Dos ramas que dejan los
+    mismos bytes con modos distintos (``100644`` regular frente a ``100755``
+    ejecutable o ``120000`` symlink) chocan: medido el 26-Nov-2026 en
+    repositorio sintético, mismo blob y modo distinto ⇒ ``CONFLICT (add/add)``;
+    mismo blob y mismo modo ⇒ merge limpio en las dos órdenes, con una sola
+    copia del archivo.
+    """
+    proceso = git(repo, "ls-tree", "--full-tree", ref, "--", ruta)
+    if proceso.returncode != 0:
+        return None
+    linea = proceso.stdout.strip()
+    if not linea:
+        return None
+    modo, _tipo, oid = linea.split("\t", 1)[0].split()
+    return (modo, oid)
+
+
 def masa(repo: str, base: str, ref: str) -> Masa:
     """Suma algebraica de líneas de código, clasificada por su ruta."""
     salida = exigir(
