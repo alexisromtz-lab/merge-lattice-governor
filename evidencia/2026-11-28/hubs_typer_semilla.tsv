@@ -1,0 +1,11 @@
+ruta	parejas	en_conflicto
+typer/main.py	219	134
+typer/core.py	127	57
+typer/cli.py	116	22
+tests/test_type_conversion.py	100	86
+typer/rich_utils.py	90	76
+mkdocs.yml	64	43
+typer/models.py	56	8
+typer/_completion_classes.py	46	38
+docs/tutorial/parameter-types/enum.md	45	4
+docs/tutorial/typer-command.md	36	0

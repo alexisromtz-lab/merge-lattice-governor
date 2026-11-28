@@ -16,11 +16,14 @@ audita.
 
 Uso:
 
-    PYTHONPATH=. python3 evidencia/2026-11-27/escalera.py REPO PREFIJO [--tope N]
+    PYTHONPATH=. python3 evidencia/2026-11-27/escalera.py REPO PREFIJO [--tope N | --muestra N --semilla S]
 
 ``PREFIJO`` es el prefijo de las refs que son puntas de PR (por ejemplo
-``refs/remotes/pr/``) y ``--tope`` limita a las N primeras en orden lexicográfico
-para que la corrida quepa en un presupuesto conocido. Con ``--hubs N`` publica
+``refs/remotes/pr/``). Hay dos formas de recortar, y **no miden lo mismo**:
+``--tope`` toma las N primeras en orden lexicográfico —con refs ``pr/NNNN`` eso son
+las PRs **más antiguas**, la cota superior sesgada— mientras ``--muestra N --semilla S``
+toma N al azar uniforme con semilla declarada, que es la media poblacional. Con
+``--hubs N`` publica
 además en la salida de error las N rutas que más parejas comparten: casi siempre
 nombran el archivo que hay que partir, no la rama.
 """
@@ -28,6 +31,7 @@ nombran el archivo que hay que partir, no la rama.
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations
@@ -36,10 +40,26 @@ from merge_lattice_governor import parejas
 from merge_lattice_governor import repo as R
 
 
-def puntas(repo: str, prefijo: str, tope: int | None) -> list[str]:
+def clave(ref: str) -> tuple[str, int, str]:
+    """Orden natural de una ref: ``pr/9`` antes que ``pr/10``, no después."""
+    cabeza, _, cola = ref.rpartition("/")
+    return (cabeza, int(cola) if cola.isdigit() else -1, ref)
+
+
+def puntas(
+    repo: str,
+    prefijo: str,
+    tope: int | None,
+    muestra: int | None = None,
+    semilla: int = 0,
+) -> list[str]:
     salida = R.git(repo, "for-each-ref", "--format=%(refname)", prefijo)
     refs = R.exigir(salida, f"for-each-ref {prefijo}").split()
-    refs.sort()
+    refs.sort(key=clave)
+    if muestra is not None:
+        if muestra > len(refs):
+            raise ValueError(f"--muestra {muestra} > {len(refs)} puntas disponibles")
+        return sorted(random.Random(semilla).sample(refs, muestra))
     return refs[:tope] if tope else refs
 
 
@@ -71,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("repo")
     p.add_argument("prefijo")
     p.add_argument("--tope", type=int, default=None)
+    p.add_argument("--muestra", type=int, default=None)
+    p.add_argument("--semilla", type=int, default=0)
     p.add_argument("--trabajadores", type=int, default=4)
     p.add_argument(
         "--hubs",
@@ -81,11 +103,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
+    if args.tope is not None and args.muestra is not None:
+        print("--tope y --muestra recortan de forma distinta: elige uno", file=sys.stderr)
+        return 2
+
     if not R.es_repo(args.repo):
         print(f"no es un repositorio git: {args.repo}", file=sys.stderr)
         return 2
 
-    refs = puntas(args.repo, args.prefijo, args.tope)
+    try:
+        refs = puntas(args.repo, args.prefijo, args.tope, args.muestra, args.semilla)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.muestra is not None:
+        print(f"muestra={len(refs)} semilla={args.semilla}", file=sys.stderr)
     if len(refs) < 2:
         print(f"{args.prefijo} da {len(refs)} punta(s): hacen falta 2", file=sys.stderr)
         return 2
