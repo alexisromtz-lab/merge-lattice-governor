@@ -27,7 +27,9 @@ $ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases
 ```
 
 `uvx` exige el nombre PEP 427 completo (`nombre-versión-py3-none-any.whl`): un nombre
-abreviado se rechaza antes de instalar. El wheel lo construye y lo adjunta el flujo
+abreviado se rechaza antes de instalar. Comprobado el 28-Nov-2026: ese wheel instalado en un
+entorno vacío, sin el repositorio a la vista, responde `merge-lattice-governor 0.9.1` y su
+`--self-test` pasa. El wheel lo construye y lo adjunta el flujo
 `publicar` en cada etiqueta `v*`, después de comprobar que la etiqueta y el manifiesto son el
 mismo objeto; la subida a PyPI es el único paso que espera un registro fuera del código.
 
@@ -123,13 +125,15 @@ abiertas de dos repositorios ajenos:
 
 | sujeto | PRs | parejas | conmutan | chocan | lotes de CI | reloj |
 |---|---|---|---|---|---|---|
-| `tiangolo/typer` | 46 | 1 035 | 823 | 212 | 16 | 7,5 s |
+| `tiangolo/typer` | 46 | 1 035 | 823 | 212 | 16 | 7,5 s tibio · 16,2 s frío |
 | `encode/httpx` | 40 | 780 | 714 | 66 | 7 | 6,7 s |
 
-Las dos corridas dieron el mismo reparto con caché tibia y con `env -i`, RC 0: la cifra es del
-objeto, no del intérprete. El clon parcial tardó 1,5 s en `typer` y 5,1 s en traer sus 1 225
-refs de PR. `--lotes` agrupa por árbol, no por contenido, así que no necesita los blobs — que
-es justo lo que el clon parcial no trae.
+El reparto es el mismo en tres modos —caché tibia, `env -i` y clon recién traído, RC 0—: la
+cifra es del objeto, no del intérprete. El reloj sí cambia con el modo y se publica con él:
+`typer` tardó **7,5 s** con el almacén tibio y **16,2 s** sobre un clon recién traído, porque
+la primera corrida paga leer el árbol que acaba de llegar. El clon parcial tardó 1,7 s y
+traer sus 1 225 refs de PR entre 5,1 s y 7,5 s según la red. `--lotes` agrupa por árbol, no
+por contenido: no necesita los blobs, que es justo lo que el clon parcial no trae.
 
 Qué significa el resultado, en una frase que se le puede decir a un equipo: **212 de las
 1 035 parejas de PRs abiertos de `tiangolo/typer` no pueden conmutar**, así que esa cola no
