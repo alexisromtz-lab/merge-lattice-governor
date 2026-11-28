@@ -1,0 +1,16 @@
+ruta	parejas	en_conflicto
+typer/main.py	253	143
+typer/core.py	135	59
+tests/test_type_conversion.py	110	94
+typer/cli.py	91	0
+typer/rich_utils.py	72	57
+typer/models.py	60	8
+mkdocs.yml	56	43
+typer/_completion_classes.py	46	38
+docs/tutorial/typer-command.md	36	0
+tests/test_others.py	36	36
+tests/test_tutorial/test_options_autocompletion/test_tutorial008.py	36	36
+tests/test_tutorial/test_options_autocompletion/test_tutorial008_an.py	36	36
+tests/test_tutorial/test_options_autocompletion/test_tutorial009.py	36	36
+tests/test_tutorial/test_options_autocompletion/test_tutorial009_an.py	36	36
+typer/testing.py	35	24
