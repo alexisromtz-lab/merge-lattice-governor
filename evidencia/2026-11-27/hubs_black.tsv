@@ -1,0 +1,16 @@
+ruta	parejas	en_conflicto
+CHANGES.md	686	462
+tests/test_black.py	464	333
+src/black/files.py	254	186
+src/black/__init__.py	200	169
+docs/the_black_code_style/future_style.md	168	117
+src/black/mode.py	167	117
+src/black/linegen.py	148	101
+src/black/resources/black.schema.json	140	83
+src/black/lines.py	138	105
+src/black/comments.py	80	77
+tests/data/cases/preview_long_strings__regression.py	62	62
+src/black/trans.py	60	51
+src/black/nodes.py	54	54
+src/black/ranges.py	52	43
+tests/data/cases/preview_long_strings.py	46	46

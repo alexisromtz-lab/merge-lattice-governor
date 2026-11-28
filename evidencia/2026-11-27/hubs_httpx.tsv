@@ -1,0 +1,16 @@
+ruta	parejas	en_conflicto
+httpx/_client.py	137	39
+CHANGELOG.md	114	109
+httpx/_transports/default.py	99	34
+pyproject.toml	84	50
+httpx/_config.py	68	66
+docs/advanced/ssl.md	54	36
+tests/test_content.py	50	33
+docs/quickstart.md	45	0
+httpx/_models.py	40	33
+httpx/_content.py	39	33
+README.md	37	19
+.github/workflows/test-suite.yml	36	35
+tests/test_config.py	34	34
+httpx/__init__.py	24	16
+requirements.txt	19	19
