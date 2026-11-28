@@ -65,3 +65,17 @@ class FormaDelFlujo(unittest.TestCase):
         self.assertIn("environment: pypi", self.texto)
         for prohibido in ("PYPI_API_TOKEN", "password:", "TWINE_PASSWORD"):
             self.assertNotIn(prohibido, self.texto)
+
+    def test_el_wheel_se_adjunta_al_release_antes_de_pypi(self) -> None:
+        """La puerta que no pide credenciales no puede depender de la que sí."""
+        self.assertIn("contents: write", self.texto)
+        adjuntar = self.texto.index("gh release upload")
+        pypi = self.texto.index("pypa/gh-action-pypi-publish")
+        self.assertLess(adjuntar, pypi)
+
+    def test_pypi_esta_apagado_hasta_que_exista_el_publicador(self) -> None:
+        """Sin `pending publisher` el paso falla: encenderlo es un acto, no un default."""
+        lineas = self.texto.splitlines()
+        pypi = next(i for i, l in enumerate(lineas) if "pypa/gh-action-pypi-publish" in l)
+        contexto = "\n".join(lineas[max(0, pypi - 2):pypi])
+        self.assertIn("if: vars.PUBLICAR_PYPI == 'si'", contexto)

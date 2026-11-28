@@ -9,11 +9,11 @@ siendo solvente.
 
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
 tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
-pelado —158 pruebas, y el número no se copia aquí: `tests/test_paridad_readme.py` lo cuenta
+pelado —160 pruebas, y el número no se copia aquí: `tests/test_paridad_readme.py` lo cuenta
 con el propio descubridor en cada corrida y falla si esta portada cita otro—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.1
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -22,19 +22,21 @@ Sin PyPI todavía, pero **sin clonar**: el wheel viaja como artefacto inmutable 
 así que un CI lo instala en una línea y sin compilar.
 
 ```console
-$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.9.0/merge_lattice_governor-0.9.0-py3-none-any.whl merge-lattice-governor --version
-$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.9.0/merge_lattice_governor-0.9.0-py3-none-any.whl
+$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.9.1/merge_lattice_governor-0.9.1-py3-none-any.whl merge-lattice-governor --version
+$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.9.1/merge_lattice_governor-0.9.1-py3-none-any.whl
 ```
 
 `uvx` exige el nombre PEP 427 completo (`nombre-versión-py3-none-any.whl`): un nombre
-abreviado se rechaza antes de instalar.
+abreviado se rechaza antes de instalar. El wheel lo construye y lo adjunta el flujo
+`publicar` en cada etiqueta `v*`, después de comprobar que la etiqueta y el manifiesto son el
+mismo objeto; la subida a PyPI es el único paso que espera un registro fuera del código.
 
 ### Como hook de `pre-commit`
 
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.9.0
+    rev: v0.9.1
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -58,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.1
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -74,14 +76,14 @@ Con `lotes: "true"` la acción no pide cubeta y publica las **corridas de CI sin
 posible** —el ahorro de minutos es el producto—:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.1
         with:
           lotes: "true"
           refs: "origin/pr-402 origin/pr-401 origin/pr-403 origin/pr-405"
           salida-json: artefactos/lotes.json
 ```
 
-Se recomienda fijar la etiqueta exacta (`@v0.9.0`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.9.1`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -90,7 +92,7 @@ rama** (`AL_DIA` · `REBASAR_LIBRE` · `REBASAR_CON_MERGE_INTERNO` · `REBASAR_C
 consulta antes de decidir si el plan es siquiera el problema:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.1
         with:
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
           argumentos: "--prescribir"
@@ -706,7 +708,7 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.1
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```

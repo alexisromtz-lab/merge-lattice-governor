@@ -1,12 +1,14 @@
 name: publicar
 
-# Publica en PyPI por OIDC: cero tokens estáticos en el repositorio.
+# Un tag publica en dos destinos, y el segundo no depende de credenciales:
 #
-# Requisito de una sola vez y fuera del código: registrar en pypi.org un
-# «pending publisher» para alexisromtz-lab/merge-lattice-governor con
-# workflow `publicar.yml` y entorno `pypi`. Hasta que ese registro exista,
-# este flujo falla en el paso de subida y **no publica nada**; la guarda de
-# etiqueta corre antes de construir, así que un tag equivocado tampoco llega.
+# 1. El wheel se adjunta al release de GitHub. Es la puerta de instalación que
+#    funciona hoy —`pip install <url del .whl>`— sin cuenta ni token.
+# 2. PyPI por OIDC, sin tokens estáticos, **sólo** si el repositorio declara la
+#    variable `PUBLICAR_PYPI=si`. Antes de eso hay un registro que no vive en el
+#    código: el «pending publisher» de pypi.org para alexisromtz-lab/
+#    merge-lattice-governor, workflow `publicar.yml`, entorno `pypi`. Encender
+#    la variable sin ese registro deja el paso en rojo, y por eso está apagada.
 on:
   push:
     tags: ["v*"]
@@ -20,6 +22,7 @@ jobs:
     environment: pypi
     permissions:
       id-token: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,4 +34,13 @@ jobs:
         run: |
           python -m pip install --quiet build
           python -m build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Adjuntar el wheel al release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 ||
+            gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" dist/*.whl --clobber
+      - name: Publicar en PyPI
+        if: vars.PUBLICAR_PYPI == 'si'
+        uses: pypa/gh-action-pypi-publish@release/v1
