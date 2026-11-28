@@ -9,10 +9,10 @@ siendo solvente.
 
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
 tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
-pelado —138 pruebas, medido en un Python 3.12 sin PyYAML—.
+pelado —147 pruebas, medido el 28-Nov-2026 en un Python 3.12 sin PyYAML—.
 
 ```console
-$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.8.0
+$ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.0
 $ merge-lattice-governor --base origin/main --holgura-inicial -1020.35 \
     --ref rama-pago --ref pr-402 --ref pr-401 --ref pr-403
 ```
@@ -21,8 +21,8 @@ Sin PyPI todavía, pero **sin clonar**: el wheel viaja como artefacto inmutable 
 así que un CI lo instala en una línea y sin compilar.
 
 ```console
-$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.8.0/merge_lattice_governor-0.8.0-py3-none-any.whl merge-lattice-governor --version
-$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.8.0/merge_lattice_governor-0.8.0-py3-none-any.whl
+$ uvx --from https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.9.0/merge_lattice_governor-0.9.0-py3-none-any.whl merge-lattice-governor --version
+$ pip install https://github.com/alexisromtz-lab/merge-lattice-governor/releases/download/v0.9.0/merge_lattice_governor-0.9.0-py3-none-any.whl
 ```
 
 `uvx` exige el nombre PEP 427 completo (`nombre-versión-py3-none-any.whl`): un nombre
@@ -33,7 +33,7 @@ abreviado se rechaza antes de instalar.
 ```yaml
 repos:
   - repo: https://github.com/alexisromtz-lab/merge-lattice-governor
-    rev: v0.8.0
+    rev: v0.9.0
     hooks:
       - id: merge-lattice-governor
         args: ["--base", "origin/main", "--holgura-inicial", "46.62",
@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # el predicado exacto necesita el historial
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.8.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.0
         with:
           holgura-inicial: "46.62"          # obligatoria: la ley de masa es tuya
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
@@ -73,14 +73,14 @@ Con `lotes: "true"` la acción no pide cubeta y publica las **corridas de CI sin
 posible** —el ahorro de minutos es el producto—:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.8.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.0
         with:
           lotes: "true"
           refs: "origin/pr-402 origin/pr-401 origin/pr-403 origin/pr-405"
           salida-json: artefactos/lotes.json
 ```
 
-Se recomienda fijar la etiqueta exacta (`@v0.8.0`). Este repositorio **no** mantiene una
+Se recomienda fijar la etiqueta exacta (`@v0.9.0`). Este repositorio **no** mantiene una
 etiqueta móvil `@v0`: una referencia mutable que promete lo que dice una versión fija es la
 misma clase de defecto que un plan sin su marco —no se puede citar lo que cambia solo—.
 
@@ -89,7 +89,7 @@ rama** (`AL_DIA` · `REBASAR_LIBRE` · `REBASAR_CON_MERGE_INTERNO` · `REBASAR_C
 consulta antes de decidir si el plan es siquiera el problema:
 
 ```yaml
-      - uses: alexisromtz-lab/merge-lattice-governor@v0.8.0
+      - uses: alexisromtz-lab/merge-lattice-governor@v0.9.0
         with:
           refs: "origin/pr-402 origin/pr-401 origin/pr-403"
           argumentos: "--prescribir"
@@ -667,13 +667,13 @@ una matriz medida.
 ```yaml
 - uses: actions/checkout@v4
   with: { fetch-depth: 0 }
-- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.8.0
+- run: pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.0
 - run: merge-lattice-governor --base origin/main --holgura-inicial 0
          --ref origin/pr-401 --ref origin/pr-402 --ref origin/pr-403
 ```
 
-(Sin wheel publicado, la instalación es por URL de repositorio; `pip install
-merge-lattice-governor` no resuelve todavía.)
+(El wheel viaja como artefacto del release mientras no haya PyPI: se instala por URL, y
+`pip install merge-lattice-governor` todavía no resuelve.)
 
 ## Medido sobre una cola real: 15 PRs, 105 parejas
 
@@ -796,6 +796,36 @@ merge-lattice-governor --base main --sin-plan --json \
     --ref pr-7194 --ref pr-7213 --ref pr-7388 --ref pr-7413 --ref pr-7415 \
     --ref pr-7446 --ref pr-7471 --ref pr-7506 --ref pr-7513 --ref pr-7520
 ```
+
+## La muestra sembrada (28-Nov-2026): la anterior no era la que decía
+
+La corrida del 27-Nov publicó 2 340 parejas de tres colas ajenas (`tiangolo/typer`,
+`encode/httpx`, `psf/black`) declarando sus cifras **cota superior por edad**, porque creía
+haber tomado las 40 PRs abiertas más antiguas. No lo eran: era la **primera página** de
+`gh pr list --limit 40`, ordenada por actividad, que en `typer` deja fuera las 6 PRs abiertas
+de número más bajo. La corrección vive en
+[`evidencia/2026-11-27/`](evidencia/2026-11-27/README.md), en la cabecera.
+
+Se rehizo con procedencia reproducible: población completa (`gh pr list --limit 1000` → **46 ·
+104 · 74** abiertas) y **muestra aleatoria uniforme** `--muestra 40 --semilla 20261128` sobre
+la población ordenada numéricamente, con los 40 números elegidos publicados. 780 parejas por
+sujeto, base = merge-base de la pareja:
+
+| cola | `k = 1` (una ruta común) | `k ≥ 2` | salto |
+|---|---|---|---|
+| `tiangolo/typer` | 0,2934 [0,2460·0,3457] | 0,5353 [0,4822·0,5876] | **+24,2** |
+| `encode/httpx` | 0,2905 [0,2368·0,3507] | 0,8235 [0,7654·0,8697] | **+53,0** |
+| `psf/black` | 0,0748 [0,0465·0,1180] | 0,7636 [0,7243·0,7989] | **+68,9** |
+
+Lo que sobrevive: la **dirección** en 3/3 colas y el salto ≥ +15 puntos en 3/3, predichos a
+las 08:24 CST antes de medir. Lo que se **refuta**: la cota no era cota — la muestra uniforme
+rompe *más* que la página de actividad (`httpx` 0,7817 → 0,8235; `black` 0,7126 → 0,7636), y
+las magnitudes salieron por encima de las predichas en los tres sujetos. `k = 0` sigue en
+**0 roturas sobre 529 parejas** (`black`: de `n = 3` a `n = 71`), pero ese cero es el atajo
+por soporte disjunto, no un hallazgo.
+
+Recibos, muestra elegida y agregación sin `git`:
+[`evidencia/2026-11-28/`](evidencia/2026-11-28/README.md).
 
 ## Conformidad medida
 
