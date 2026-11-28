@@ -1,5 +1,17 @@
 # Escalera de acoplamiento, 27-Nov-2026 — tres colas de PR ajenas
 
+> **CORRECCIÓN 28-Nov-2026 — léase antes que nada.** Este documento decía que la muestra eran
+> «las 40 puntas de PR abiertas con número más bajo —las más antiguas—». **Es falso.** La muestra
+> fue la **primera página de `gh pr list --limit 40`** en el orden por defecto de `gh` (actividad,
+> no antigüedad): en `typer` dejó fuera las **6 PRs abiertas de número más bajo** (398, 459, 745,
+> 828, 869, 985) —comprobable: esa página es hoy idéntica a las 40 puntas medidas— y en `httpx` y
+> `black` la página de hoy ya es otra. Las cifras de abajo son correctas **para esas 40 puntas**,
+> cuyos números están en los TSV; pero **no son cota superior por edad**, y el conjunto no es
+> reproducible a partir de la receta. La corrida reproducible —población completa, semilla
+> declarada, muestra publicada— es [`../2026-11-28/`](../2026-11-28/README.md), y al medirla el
+> salto y la rotura **suben** en `httpx` y `black`: el sesgo iba al revés de lo que este documento
+> declaró.
+
 **La pregunta que contesta:** de las parejas de PRs abiertos de un repositorio, ¿cuántas son
 **estructuralmente irreducibles** — es decir, cuántas van a chocar hagan lo que hagan con el
 orden— y cuántas sólo necesitan turnarse?
@@ -12,8 +24,10 @@ segunda fila el diagnóstico es **partir el PR**, no reordenarlo.
 
 ## Qué se midió
 
-Tres repositorios públicos, las **40 puntas de PR abiertas con número más bajo** de cada uno —las
-más antiguas—, y **todas** sus parejas: 780 por sujeto, 2 340 en total.
+Tres repositorios públicos, **las 40 puntas que devolvió `gh pr list --state open --limit 40`** en
+el instante de la corrida, y **todas** sus parejas: 780 por sujeto, 2 340 en total. Los números
+concretos de cada punta están en los TSV: ésa es la definición estable de la muestra. (Ver la
+corrección de arriba: **no** son las 40 de número más bajo, y el conjunto no se reconstruye hoy.)
 
 | sujeto | puntas | parejas | motor |
 |---|---|---|---|
@@ -113,10 +127,13 @@ guardan en este directorio.
 
 ## Límites, declarados
 
-* **`--tope 40` toma las de número más bajo, o sea las PRs abiertas más viejas** — no una muestra
-  aleatoria. La más vieja es también la más divergente del tronco, así que estas cifras son una
-  **cota alta** del acoplamiento de la cola, no su promedio. Un muestreo aleatorio con semilla
-  declarada es la corrida siguiente.
+* **La muestra no es aleatoria ni es «la más antigua»: es una página de `gh`.** Se bajaron las 40
+  puntas de `gh pr list --limit 40` (orden por defecto: actividad) y `--tope 40` no recortó nada.
+  Consecuencias medidas el 28-Nov-2026: en `typer` la página excluye las 6 PRs de número más bajo;
+  en `httpx` y `black` la página de hoy ya es distinta, así que **el conjunto no se reproduce**.
+  La corrida reproducible está en [`../2026-11-28/`](../2026-11-28/README.md) y sus cifras son
+  **mayores** en `httpx` (k≥2 0,8235 vs 0,7817) y en `black` (0,7636 vs 0,7126): la advertencia
+  de «cota superior por edad» que había aquí era falsa en dirección.
 * **`k` cuenta intersección de rutas, no de rangos de línea.** Dos ramas que editan zonas distintas
   del mismo archivo cuentan como acopladas aquí y no chocan en un merge real: la cifra sobreestima.
   El `k≥2` es, por tanto, una condición **suficiente para mirar**, no una promesa de conflicto.
