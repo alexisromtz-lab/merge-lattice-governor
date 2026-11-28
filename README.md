@@ -9,7 +9,8 @@ siendo solvente.
 
 Sin dependencias. Python ≥ 3.11. Cero escrituras en el repositorio que audita. La suite
 tampoco arrastra ninguna: `python -m unittest discover -s tests -t .` corre en un intérprete
-pelado —147 pruebas, medido el 28-Nov-2026 en un Python 3.12 sin PyYAML—.
+pelado —158 pruebas, y el número no se copia aquí: `tests/test_paridad_readme.py` lo cuenta
+con el propio descubridor en cada corrida y falla si esta portada cita otro—.
 
 ```console
 $ pip install git+https://github.com/alexisromtz-lab/merge-lattice-governor@v0.9.0
@@ -97,6 +98,44 @@ consulta antes de decidir si el plan es siquiera el problema:
 ```
 
 ---
+
+## Primer minuto: qué hay en tu cola, sin correr tu CI
+
+Un clon parcial, una línea, y el reparto de tu cola abierta. No escribe en el repositorio
+auditado, no ejecuta tu CI y agrupa por **soporte de archivo**, que es el atajo exacto del
+teorema — no una aproximación.
+
+```console
+$ git clone --filter=blob:none --no-checkout -q https://github.com/<dueño>/<repo> /tmp/cola
+$ cd /tmp/cola && git fetch -q origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
+$ merge-lattice-governor --repo /tmp/cola --base origin/HEAD --sin-plan --lotes --json \
+    --ref origin/pr/123 --ref origin/pr/456      # una por PR abierta
+```
+
+Los números de PR abierta salen de la API pública (`/pulls?state=open`), **no** del clon: los
+`refs/pull/*` incluyen también las cerradas, y medirlas todas describiría una cola que ya no
+existe. `--base origin/HEAD` hace la receta independiente del nombre del tronco.
+
+Medido el 28-Nov-2026 con el paquete instalado y `env -i PATH=/usr/bin:/bin`, sobre las PRs
+abiertas de dos repositorios ajenos:
+
+| sujeto | PRs | parejas | conmutan | chocan | lotes de CI | reloj |
+|---|---|---|---|---|---|---|
+| `tiangolo/typer` | 46 | 1 035 | 823 | 212 | 16 | 7,5 s |
+| `encode/httpx` | 40 | 780 | 714 | 66 | 7 | 6,7 s |
+
+Las dos corridas dieron el mismo reparto con caché tibia y con `env -i`, RC 0: la cifra es del
+objeto, no del intérprete. El clon parcial tardó 1,5 s en `typer` y 5,1 s en traer sus 1 225
+refs de PR. `--lotes` agrupa por árbol, no por contenido, así que no necesita los blobs — que
+es justo lo que el clon parcial no trae.
+
+Qué significa el resultado, en una frase que se le puede decir a un equipo: **212 de las
+1 035 parejas de PRs abiertos de `tiangolo/typer` no pueden conmutar**, así que esa cola no
+es una fila. Un merge queue que los serialice uno a uno paga 46 corridas de CI; agrupando por
+soporte de archivo, la misma cola cabe en 16 — el número que costó, no un mínimo demostrado.
+
+Lo que esto **no** dice: si tus PRs compilan. Dice qué parejas no conmutan y en cuántos lotes
+cabe tu cola.
 
 ## El problema
 
@@ -854,8 +893,20 @@ aparte para que un escáner caído no se confunda con un test rojo:
 - run: uvx --from platino-scan==1.5.3 platino-scan .
 ```
 
-Medido el 28-Nov-2026 sobre `main`: `ARQUITECTURA SANA`, RC 0 — 18 archivos de producto, 9 de
-pruebas, dos puertas declaradas por encima del umbral.
+Medido el 28-Nov-2026: `ARQUITECTURA SANA`, RC 0 — 19 archivos de producto, 11 de pruebas,
+cero barriles.
+
+Y una corrección honesta sobre el umbral: **ninguna de las tres puertas declaradas lo supera**.
+`__main__.py` mide 50,0 % (9 módulos alcanzables), `cli.py` 44,4 % (8) y `__init__.py` 0 %. El
+universo de `platino-scan` es todo `.py` versionado fuera de `tests/`, así que incluye
+`evidencia/` (8 scripts de medición) y `scripts/` (1 guarda de publicación), que no importan al
+paquete: la fracción publicada es una **cota inferior** del papel de cada puerta, no su papel.
+
+Se puede ver el efecto sin tocar el paquete: añadir `scripts/verificar_etiqueta.py` —un nodo
+sin aristas— llevó la puerta de 52,9 % a 50,0 %. Se movió el denominador, no el grafo. Excluir
+esos dos árboles devolvería la cifra alta y borraría nueve nodos del grafo, así que no se
+excluyen: se publican. El pedido de poder declarar el universo de importación está abierto en
+`platino-scan`.
 
 ## La nota técnica — la ley, medida y con DOI
 
